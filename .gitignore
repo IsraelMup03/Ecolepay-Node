@@ -1,0 +1,25 @@
+# Dépendances (les fichiers lourds téléchargés)
+node_modules/
+.pnpm-store/
+
+# Dossiers de build (les fichiers compilés pour la production)
+dist/
+build/
+
+# Fichiers de configuration personnels (contenant vos mots de passe MySQL/API)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Fichiers d'historique et de logs de crash
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Fichiers système invisibles (Mac et Windows)
+.DS_Store
+Thumbs.db
