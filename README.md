@@ -1,4 +1,4 @@
-# EcolePay v2.0 — Node.js / React
+cd# EcolePay v2.0 — Node.js / React
 
 Réécriture complète de l'application **EcolePay** (gestion des paiements
 scolaires), initialement en PHP + MySQL, vers une architecture moderne :
@@ -36,52 +36,128 @@ conservé (adapté), pour ne pas perdre la logique métier existante.
 ## Prérequis
 
 - Node.js 18 ou plus récent
-- MySQL 5.7+ / MariaDB 10.3+
+- MySQL 5.7+ / MariaDB 10.3+ (optionnel pour le mode MySQL)
 - npm
+
+## Commandes rapides
+
+Si tout est déjà installé :
+
+```bash
+# Backend
+cd backend
+npm start
+
+# Frontend
+cd frontend
+npm run dev
+```
+
+Pour réinitialiser la base SQLite une fois :
+
+```bash
+cd backend
+npm run migrate:sqlite
+```
 
 ## Installation
 
-### 1. Base de données + Backend
+### 1. Prérequis
+
+- Node.js 18 ou plus récent
+- npm
+- pour le mode MySQL : MySQL ou MariaDB installé
+
+### 2. Installation initiale
+
+Ouvrez deux terminaux et installez les dépendances une seule fois :
+
+```bash
+cd backend
+npm install
+
+cd ../frontend
+npm install
+```
+
+### 3. Mode SQLite (sans XAMPP)
+
+Cette application peut tourner en SQLite sans MySQL ni XAMPP.
+Dans ce mode, le backend utilise une base locale `backend/database/ecolepay.sqlite`.
+
+```bash
+cd backend
+npm run migrate:sqlite
+npm start
+```
+
+Puis dans un autre terminal :
+
+```bash
+cd frontend
+npm run dev
+```
+
+- Backend : `http://localhost:5000`
+- Frontend : `http://localhost:5173`
+
+#### Raccourci bureau
+
+Un fichier de démarrage `start-ecolepay.bat` est fourni à la racine du projet.
+Copiez-le sur votre bureau ou créez un raccourci vers ce fichier, puis double-cliquez dessus.
+
+Le script vérifie automatiquement :
+- si Node.js et npm sont installés,
+- si les dépendances backend/frontend sont présentes,
+- si la base SQLite doit être créée.
+
+Ensuite il lance le backend, le frontend et ouvre le navigateur sur `http://localhost:5173`.
+
+### 4. Mode MySQL (optionnel)
+
+Si vous préférez utiliser MySQL, configurez `backend/.env` :
 
 ```bash
 cd backend
 cp .env.example .env
-# Éditez .env avec vos identifiants MySQL (DB_HOST, DB_USER, DB_PASS, DB_NAME)
-
-npm install
-npm run migrate     # crée la base "ecolepay" et ses tables, régénère le mot de passe admin
-npm run dev          # démarre l'API sur http://localhost:5000 (ou "npm start" en production)
+# Éditez .env avec vos identifiants MySQL
 ```
 
-Compte administrateur par défaut créé par `npm run migrate` :
+Puis lancez :
+
+```bash
+npm install
+npm run migrate
+npm start
+```
+
+Dans un autre terminal :
+
+```bash
+cd ../frontend
+npm install
+npm run dev
+```
+
+### 5. Accès administrateur
+
+Compte administrateur par défaut :
 
 - Email : `admin@ecolepay.com`
 - Mot de passe : `Admin@2024`
-- Un changement de mot de passe sera demandé à la première connexion.
 
-### 2. Frontend
+Le changement de mot de passe peut être demandé à la première connexion.
 
-```bash
-cd frontend
-cp .env.example .env
-# Ajustez VITE_API_URL si votre API ne tourne pas sur localhost:5000
-
-npm install
-npm run dev          # démarre l'interface sur http://localhost:5173
-```
-
-Ouvrez ensuite `http://localhost:5173` dans votre navigateur.
-
-### 3. Build de production
+### 6. Build de production
 
 ```bash
 # Frontend
 cd frontend
-npm run build        # génère le dossier dist/ à déployer sur un serveur statique (Nginx, etc.)
+npm run build
 
 # Backend
 cd backend
-npm start             # ou utilisez pm2 / un service systemd en production
+npm start
 ```
 
 ## Structure du projet
