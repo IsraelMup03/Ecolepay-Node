@@ -2,7 +2,7 @@
 REM Script de démarrage pour EcolePay (backend + frontend) et ouverture du navigateur.
 REM Copier ce fichier sur le bureau ou créer un raccourci vers ce fichier.
 
-setlocal enabledelayedexpansion
+setlocal
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
 set "FRONTEND=%ROOT%frontend"
@@ -54,10 +54,10 @@ if not exist "%FRONTEND%\node_modules" (
 )
 echo ---------------------------------------------
 echo Démarrage du backend...
-start "EcolePay Backend" cmd /k "cd /d "%BACKEND%" && npm start"
+start "EcolePay Backend" powershell -NoExit -Command "Set-Location -LiteralPath '%BACKEND%'; npm start"
 
 echo Démarrage du frontend...
-start "EcolePay Frontend" cmd /k "cd /d "%FRONTEND%" && npm run dev"
+start "EcolePay Frontend" powershell -NoExit -Command "Set-Location -LiteralPath '%FRONTEND%'; npm run dev"
 
 echo Ouverture de l'application dans le navigateur...
 timeout /t 5 /nobreak >nul
