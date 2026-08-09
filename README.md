@@ -36,29 +36,53 @@ conservé (adapté), pour ne pas perdre la logique métier existante.
 ## Prérequis
 
 - Node.js 18 ou plus récent
-- MySQL 5.7+ / MariaDB 10.3+ (optionnel pour le mode MySQL)
 - npm
+- Windows 10/11 ou un autre OS compatible si vous utilisez les commandes manuelles
+- Git (optionnel si vous clonez depuis GitHub)
+- Pas besoin de XAMPP si vous utilisez le mode SQLite
 
-## Commandes rapides
+## Prérequis pour un autre PC
 
-Si tout est déjà installé :
+Pour qu'un autre poste puisse utiliser le logiciel à partir du dossier partagé ou d'un clone GitHub, il doit remplir les points suivants :
+
+- avoir `Node.js` et `npm` installés.
+- cloner ou copier tout le dossier du projet (`backend/`, `frontend/`, `launch-ecolepay.bat`, etc.).
+- si le dossier contient `backend/database/ecolepay.sqlite`, le destinataire peut lancer directement le logiciel.
+- si le dossier contient déjà `node_modules/`, il n'est pas nécessaire de relancer `npm install`, mais cela reste recommandé après un clone GitHub.
+
+
+
+
+
+
+
+- sur Windows, ouvrir `launch-ecolepay.bat` suffit pour démarrer automatiquement le backend, le frontend et ouvrir le navigateur : c'est une commande unique, simple et sans saisie manuelle.
+
+Si la personne clone depuis GitHub :
 
 ```bash
-# Backend
+git clone <URL-du-repo>
+cd Ecolepay-Node/backend
+npm install
+cd ../frontend
+npm install
+```
+ensuite allez tout simplement dans ouvrir `launch-ecolepay.bat` suffit pour démarrer automatiquement le backend, le frontend et ouvrir le navigateur : c'est une commande unique, simple et sans saisie manuelle.
+
+si vous voulez plus compliqué 
+
+```bash
 cd backend
 npm start
-
-# Frontend
-cd frontend
-npm run dev
 ```
 
-Pour réinitialiser la base SQLite une fois :
+et dans un autre terminal :
 
 ```bash
-cd backend
-npm run migrate:sqlite
+cd frontend
+npm run dev 
 ```
+
 
 ## Installation
 
@@ -80,64 +104,6 @@ cd ../frontend
 npm install
 ```
 
-### 3. Mode SQLite (sans XAMPP)
-
-Cette application peut tourner en SQLite sans MySQL ni XAMPP.
-Dans ce mode, le backend utilise une base locale `backend/database/ecolepay.sqlite`.
-
-```bash
-cd backend
-npm run migrate:sqlite
-npm start
-```
-
-Puis dans un autre terminal :
-
-```bash
-cd frontend
-npm run dev
-```
-
-- Backend : `http://localhost:5000`
-- Frontend : `http://localhost:5173`
-
-#### Raccourci bureau
-
-Un fichier de démarrage `start-ecolepay.bat` est fourni à la racine du projet.
-Copiez-le sur votre bureau ou créez un raccourci vers ce fichier, puis double-cliquez dessus.
-
-Le script vérifie automatiquement :
-- si Node.js et npm sont installés,
-- si les dépendances backend/frontend sont présentes,
-- si la base SQLite doit être créée.
-
-Ensuite il lance le backend, le frontend et ouvre le navigateur sur `http://localhost:5173`.
-
-### 4. Mode MySQL (optionnel)
-
-Si vous préférez utiliser MySQL, configurez `backend/.env` :
-
-```bash
-cd backend
-cp .env.example .env
-# Éditez .env avec vos identifiants MySQL
-```
-
-Puis lancez :
-
-```bash
-npm install
-npm run migrate
-npm start
-```
-
-Dans un autre terminal :
-
-```bash
-cd ../frontend
-npm install
-npm run dev
-```
 
 ### 5. Accès administrateur
 
@@ -171,7 +137,7 @@ ecolepay-node/
 │   │   ├── middleware/auth.js      # vérification JWT + permissions
 │   │   ├── routes/                 # une route Express par module (auth, eleves, classes, ...)
 │   │   ├── utils/helpers.js        # matricule, référence de paiement, logs, corbeille, devises
-│   │   ├── migrate.js              # script d'installation de la base
+│   │   ├── migrate.js              # script d'installation de la base (MySQL)
 │   │   └── server.js               # point d'entrée Express
 │   └── package.json
 └── frontend/
