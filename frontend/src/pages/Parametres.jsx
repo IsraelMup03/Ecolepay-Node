@@ -6,9 +6,13 @@ export default function Parametres() {
   const { user } = useAuth();
   const [ecole, setEcole] = useState(null);
   const [params, setParams] = useState({});
+  const [ecoleForm, setEcoleForm] = useState(null);
+  const [paramsForm, setParamsForm] = useState({});
   const [logoFile, setLogoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [showEcoleModal, setShowEcoleModal] = useState(false);
+  const [showSystemeModal, setShowSystemeModal] = useState(false);
   const [confirmation, setConfirmation] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
@@ -19,15 +23,19 @@ export default function Parametres() {
   }
   useEffect(() => { load(); }, []);
 
+  function openEcoleEdit() { setEcoleForm(ecole); setLogoFile(null); setShowEcoleModal(true); }
+  function openSystemeEdit() { setParamsForm(params); setShowSystemeModal(true); }
+
   async function saveEcole(e) {
     e.preventDefault();
     setSaving(true); setNotice('');
     const fd = new FormData();
-    Object.entries(ecole).forEach(([k, v]) => { if (v !== null && k !== 'logo' && k !== 'id' && k !== 'date_creation' && k !== 'updated_at') fd.append(k, v); });
+    Object.entries(ecoleForm).forEach(([k, v]) => { if (v !== null && k !== 'logo' && k !== 'id' && k !== 'date_creation' && k !== 'updated_at') fd.append(k, v); });
     if (logoFile) fd.append('logo', logoFile);
     try {
       await client.put('/parametres/ecole', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setNotice("Informations de l'école mises à jour.");
+      setShowEcoleModal(false);
       load();
     } finally {
       setSaving(false);
@@ -38,8 +46,10 @@ export default function Parametres() {
     e.preventDefault();
     setSaving(true); setNotice('');
     try {
-      await client.put('/parametres/systeme', params);
+      await client.put('/parametres/systeme', paramsForm);
+      setParams(paramsForm);
       setNotice('Paramètres système mis à jour.');
+      setShowSystemeModal(false);
     } finally {
       setSaving(false);
     }
@@ -68,54 +78,38 @@ export default function Parametres() {
 
       <div className="grid-2 mb-16">
         <div className="card">
-          <div className="card-header"><i className="ph ph-chalkboard-teacher"></i><h3>Informations de l'école</h3></div>
-          <form onSubmit={saveEcole}>
-            <div className="card-body">
-              <div className="form-grid">
-                <div className="form-group"><label>Nom de l'école</label><input value={ecole.nom || ''} onChange={(e) => setEcole({ ...ecole, nom: e.target.value })} required /></div>
-                <div className="form-group"><label>Adresse</label><textarea value={ecole.adresse || ''} onChange={(e) => setEcole({ ...ecole, adresse: e.target.value })} /></div>
-                <div className="form-grid form-grid-2">
-                  <div className="form-group"><label>Téléphone</label><input value={ecole.telephone || ''} onChange={(e) => setEcole({ ...ecole, telephone: e.target.value })} /></div>
-                  <div className="form-group"><label>Email</label><input type="email" value={ecole.email || ''} onChange={(e) => setEcole({ ...ecole, email: e.target.value })} /></div>
-                </div>
-                <div className="form-grid form-grid-2">
-                  <div className="form-group">
-                    <label>Devise principale</label>
-                    <select value={ecole.devise || 'USD'} onChange={(e) => setEcole({ ...ecole, devise: e.target.value })}>
-                      <option value="USD">USD</option><option value="CDF">CDF</option>
-                    </select>
-                  </div>
-                  <div className="form-group"><label>Année scolaire</label><input value={ecole.annee_scolaire || ''} onChange={(e) => setEcole({ ...ecole, annee_scolaire: e.target.value })} /></div>
-                </div>
-                <div className="form-group"><label>Logo de l'école</label><input type="file" accept="image/*" onChange={(e) => setLogoFile(e.target.files[0])} /></div>
-                <button className="btn btn-accent btn-block" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
-              </div>
+          <div className="card-header">
+            <i className="ph ph-chalkboard-teacher"></i><h3>Informations de l'école</h3>
+            <div className="card-actions">
+              <button className="btn btn-outline btn-sm" onClick={openEcoleEdit}><i className="ph ph-pencil-simple"></i> Modifier</button>
             </div>
-          </form>
+          </div>
+          <div className="card-body">
+            <div className="info-grid">
+              <div className="info-item" style={{ gridColumn: '1 / -1' }}><div className="label">Nom de l'école</div><div className="value">{ecole.nom || <span className="muted">—</span>}</div></div>
+              <div className="info-item"><div className="label">Téléphone</div><div className="value">{ecole.telephone || <span className="muted">—</span>}</div></div>
+              <div className="info-item"><div className="label">Email</div><div className="value">{ecole.email || <span className="muted">—</span>}</div></div>
+              <div className="info-item"><div className="label">Devise principale</div><div className="value">{ecole.devise || 'USD'}</div></div>
+              <div className="info-item"><div className="label">Année scolaire</div><div className="value">{ecole.annee_scolaire || <span className="muted">—</span>}</div></div>
+              <div className="info-item" style={{ gridColumn: '1 / -1' }}><div className="label">Adresse</div><div className="value">{ecole.adresse || <span className="muted">—</span>}</div></div>
+            </div>
+          </div>
         </div>
 
         <div className="card">
-          <div className="card-header"><i className="ph ph-gear-six"></i><h3>Paramètres système</h3></div>
-          <form onSubmit={saveSysteme}>
-            <div className="card-body">
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Taux de change USD → CDF</label>
-                  <input type="number" step="0.01" value={params.taux_usd_cdf || ''} onChange={(e) => setParams({ ...params, taux_usd_cdf: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Délai de conservation corbeille (jours)</label>
-                  <input type="number" value={params.delai_corbeille || ''} onChange={(e) => setParams({ ...params, delai_corbeille: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Format des matricules</label>
-                  <input value={params.format_matricule || ''} onChange={(e) => setParams({ ...params, format_matricule: e.target.value })} />
-                  <small>Variables : {'{ANNEE}'} {'{NUM}'}</small>
-                </div>
-                <button className="btn btn-primary btn-block" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
-              </div>
+          <div className="card-header">
+            <i className="ph ph-gear-six"></i><h3>Paramètres système</h3>
+            <div className="card-actions">
+              <button className="btn btn-outline btn-sm" onClick={openSystemeEdit}><i className="ph ph-pencil-simple"></i> Modifier</button>
             </div>
-          </form>
+          </div>
+          <div className="card-body">
+            <div className="info-grid">
+              <div className="info-item"><div className="label">Taux de change USD → CDF</div><div className="value">{params.taux_usd_cdf || <span className="muted">—</span>}</div></div>
+              <div className="info-item"><div className="label">Délai conservation corbeille</div><div className="value">{params.delai_corbeille ? `${params.delai_corbeille} jours` : <span className="muted">—</span>}</div></div>
+              <div className="info-item" style={{ gridColumn: '1 / -1' }}><div className="label">Format des matricules</div><div className="value">{params.format_matricule || <span className="muted">—</span>}</div></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -133,6 +127,69 @@ export default function Parametres() {
           </div>
         </div>
       )}
+
+      <div className={`modal-backdrop ${showEcoleModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowEcoleModal(false)}>
+        <div className="modal">
+          <div className="modal-header"><i className="ph ph-chalkboard-teacher"></i><h3>Modifier les informations de l'école</h3><button className="modal-close" onClick={() => setShowEcoleModal(false)}><i className="ph ph-x"></i></button></div>
+          {ecoleForm && (
+            <form onSubmit={saveEcole}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group"><label>Nom de l'école</label><input value={ecoleForm.nom || ''} onChange={(e) => setEcoleForm({ ...ecoleForm, nom: e.target.value })} required /></div>
+                  <div className="form-group"><label>Adresse</label><textarea value={ecoleForm.adresse || ''} onChange={(e) => setEcoleForm({ ...ecoleForm, adresse: e.target.value })} /></div>
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group"><label>Téléphone</label><input value={ecoleForm.telephone || ''} onChange={(e) => setEcoleForm({ ...ecoleForm, telephone: e.target.value })} /></div>
+                    <div className="form-group"><label>Email</label><input type="email" value={ecoleForm.email || ''} onChange={(e) => setEcoleForm({ ...ecoleForm, email: e.target.value })} /></div>
+                  </div>
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group">
+                      <label>Devise principale</label>
+                      <select value={ecoleForm.devise || 'USD'} onChange={(e) => setEcoleForm({ ...ecoleForm, devise: e.target.value })}>
+                        <option value="USD">USD</option><option value="CDF">CDF</option>
+                      </select>
+                    </div>
+                    <div className="form-group"><label>Année scolaire</label><input value={ecoleForm.annee_scolaire || ''} onChange={(e) => setEcoleForm({ ...ecoleForm, annee_scolaire: e.target.value })} /></div>
+                  </div>
+                  <div className="form-group"><label>Logo de l'école</label><input type="file" accept="image/*" onChange={(e) => setLogoFile(e.target.files[0])} /></div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEcoleModal(false)}>Annuler</button>
+                <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${showSystemeModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowSystemeModal(false)}>
+        <div className="modal">
+          <div className="modal-header"><i className="ph ph-gear-six"></i><h3>Modifier les paramètres système</h3><button className="modal-close" onClick={() => setShowSystemeModal(false)}><i className="ph ph-x"></i></button></div>
+          <form onSubmit={saveSysteme}>
+            <div className="modal-body">
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Taux de change USD → CDF</label>
+                  <input type="number" step="0.01" value={paramsForm.taux_usd_cdf || ''} onChange={(e) => setParamsForm({ ...paramsForm, taux_usd_cdf: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Délai de conservation corbeille (jours)</label>
+                  <input type="number" value={paramsForm.delai_corbeille || ''} onChange={(e) => setParamsForm({ ...paramsForm, delai_corbeille: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Format des matricules</label>
+                  <input value={paramsForm.format_matricule || ''} onChange={(e) => setParamsForm({ ...paramsForm, format_matricule: e.target.value })} />
+                  <small>Variables : {'{ANNEE}'} {'{NUM}'}</small>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowSystemeModal(false)}>Annuler</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }
