@@ -210,6 +210,9 @@ async function main() {
   await db.run(`INSERT OR IGNORE INTO utilisateurs (nom, prenom, email, mot_de_passe, role, permissions, actif, premier_connexion) VALUES (?,?,?,?,?,?,?,?)`,
     ['Administrateur', 'Système', 'admin@ecolepay.com', adminHash, 'admin', JSON.stringify({ tout: true }), 1, 0]);
 
+  await db.run(`UPDATE utilisateurs SET mot_de_passe = ?, permissions = ?, actif = 1, premier_connexion = 0 WHERE email = ?`,
+    [adminHash, JSON.stringify({ tout: true }), 'admin@ecolepay.com']);
+
   await db.close();
   console.log('Migration SQLite terminee. Fichier DB:', dbFile);
 }
