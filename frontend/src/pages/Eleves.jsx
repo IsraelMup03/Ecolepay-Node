@@ -65,7 +65,7 @@ export default function Eleves() {
     <div>
       <div className="filters-bar">
         <div className="search-input-wrap" style={{ flex: 1, minWidth: 220 }}>
-          <i className="ri-search-line"></i>
+          <i className="ph ph-magnifying-glass"></i>
           <input placeholder="Rechercher un élève..." value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="form-group">
@@ -82,8 +82,8 @@ export default function Eleves() {
             <option value="suspendu">Suspendus</option>
           </select>
         </div>
-        <button className="btn btn-outline" onClick={exportCsv}><i className="ri-download-2-line"></i> Exporter CSV</button>
-        <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ri-add-line"></i> Inscrire un élève</button>
+        <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-download-simple"></i> Exporter CSV</button>
+        <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Inscrire un élève</button>
       </div>
 
       <div className="card">
@@ -93,8 +93,8 @@ export default function Eleves() {
               <tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Statut</th><th>Payé</th><th>Reste</th><th></th></tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={7} className="text-center text-muted">Chargement...</td></tr>}
-              {!loading && eleves.length === 0 && <tr><td colSpan={7}><div className="empty-state"><i className="ri-user-search-line"></i><h3>Aucun élève trouvé</h3><p>Essayez d'autres critères ou inscrivez un nouvel élève.</p></div></td></tr>}
+              {loading && <tr><td colSpan={7}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && eleves.length === 0 && <tr><td colSpan={7}><div className="empty-state"><i className="ph ph-user-focus"></i><h3>Aucun élève trouvé</h3><p>Essayez d'autres critères ou inscrivez un nouvel élève.</p></div></td></tr>}
               {eleves.map((e) => {
                 const reste = Math.max(0, e.frais_scolarite_total - e.total_paye);
                 return (
@@ -108,7 +108,7 @@ export default function Eleves() {
                     <td><span className={`badge ${e.statut === 'actif' ? 'badge-success' : e.statut === 'redoublant' ? 'badge-warning' : 'badge-default'}`}>{e.statut}</span></td>
                     <td>{fmt(e.total_paye)}</td>
                     <td className={reste > 0 ? '' : 'text-muted'}><strong style={{ color: reste > 0 ? 'var(--danger)' : 'var(--success)' }}>{fmt(reste)}</strong></td>
-                    <td><Link to={`/eleves/${e.id}`} className="btn btn-outline btn-sm"><i className="ri-eye-line"></i> Fiche</Link></td>
+                    <td><Link to={`/eleves/${e.id}`} className="btn btn-outline btn-sm"><i className="ph ph-eye"></i> Fiche</Link></td>
                   </tr>
                 );
               })}
@@ -120,13 +120,14 @@ export default function Eleves() {
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
           <div className="modal-header">
-            <i className="ri-user-add-line"></i><h3>Inscrire un nouvel élève</h3>
-            <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
+            <i className="ph ph-user-plus"></i><h3>Inscrire un nouvel élève</h3>
+            <button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button>
           </div>
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
               {error && <div className="alert alert-danger">{error}</div>}
               <div className="form-grid">
+                <div className="form-section-title">Informations de l'élève</div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Nom *</label><input value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} required /></div>
                   <div className="form-group"><label>Prénom *</label><input value={form.prenom} onChange={(e) => setForm({ ...form, prenom: e.target.value })} required /></div>
@@ -150,6 +151,7 @@ export default function Eleves() {
                   <div className="form-group"><label>Date de naissance</label><input type="date" value={form.date_naissance} onChange={(e) => setForm({ ...form, date_naissance: e.target.value })} /></div>
                   <div className="form-group"><label>Lieu de naissance</label><input value={form.lieu_naissance} onChange={(e) => setForm({ ...form, lieu_naissance: e.target.value })} /></div>
                 </div>
+                <div className="form-section-title">Parent / tuteur</div>
                 <div className="form-group"><label>Nom du parent/tuteur</label><input value={form.nom_parent} onChange={(e) => setForm({ ...form, nom_parent: e.target.value })} /></div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Téléphone parent</label><input value={form.telephone_parent} onChange={(e) => setForm({ ...form, telephone_parent: e.target.value })} /></div>

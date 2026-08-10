@@ -41,7 +41,7 @@ export default function ChangerMotDePasse() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-header">
-          <div className="school-logo-placeholder"><i className="ri-lock-password-line"></i></div>
+          <div className="school-logo-placeholder"><i className="ph ph-lock-key"></i></div>
           <h1>EcolePay</h1>
           <p>{user.premier_connexion ? 'Première connexion' : 'Sécurité du compte'}</p>
         </div>
@@ -53,8 +53,8 @@ export default function ChangerMotDePasse() {
               : 'Définissez un nouveau mot de passe.'}
           </p>
 
-          {error && <div className="alert alert-danger"><i className="ri-error-warning-line"></i> {error}</div>}
-          {success && <div className="alert alert-success"><i className="ri-check-line"></i> Mot de passe modifié avec succès.</div>}
+          {error && <div className="alert alert-danger"><i className="ph ph-warning-circle"></i> {error}</div>}
+          {success && <div className="alert alert-success"><i className="ph ph-check"></i> Mot de passe modifié avec succès.</div>}
 
           <form onSubmit={handleSubmit}>
             <div className="form-grid">

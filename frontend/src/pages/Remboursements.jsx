@@ -65,7 +65,7 @@ export default function Remboursements() {
     <div>
       <div className="flex-between mb-16">
         <div className="text-muted">{rows.length} demande(s) de remboursement</div>
-        <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ri-add-line"></i> Nouvelle demande</button>
+        <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Nouvelle demande</button>
       </div>
 
       <div className="card">
@@ -73,8 +73,8 @@ export default function Remboursements() {
           <table>
             <thead><tr><th>Référence</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th>{user.role === 'admin' && <th></th>}</tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="text-center text-muted">Chargement...</td></tr>}
-              {!loading && rows.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ri-refund-2-line"></i><h3>Aucune demande</h3></div></td></tr>}
+              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && rows.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-arrow-counter-clockwise"></i><h3>Aucune demande</h3></div></td></tr>}
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td><code>{r.reference_remboursement}</code></td>
@@ -88,8 +88,8 @@ export default function Remboursements() {
                     <td className="flex gap-8">
                       {r.statut === 'en_attente' && (
                         <>
-                          <button className="btn btn-success btn-sm" onClick={() => approuver(r.id)}><i className="ri-check-line"></i></button>
-                          <button className="btn btn-danger btn-sm" onClick={() => rejeter(r.id)}><i className="ri-close-line"></i></button>
+                          <button className="btn btn-success btn-sm" onClick={() => approuver(r.id)}><i className="ph ph-check"></i></button>
+                          <button className="btn btn-danger btn-sm" onClick={() => rejeter(r.id)}><i className="ph ph-x"></i></button>
                         </>
                       )}
                     </td>
@@ -103,7 +103,7 @@ export default function Remboursements() {
 
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
-          <div className="modal-header"><i className="ri-refund-2-line"></i><h3>Nouvelle demande de remboursement</h3><button className="modal-close" onClick={() => setShowModal(false)}>✕</button></div>
+          <div className="modal-header"><i className="ph ph-arrow-counter-clockwise"></i><h3>Nouvelle demande de remboursement</h3><button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button></div>
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
               {error && <div className="alert alert-danger">{error}</div>}

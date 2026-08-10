@@ -15,7 +15,7 @@ export default function Dashboard() {
     client.get('/dashboard').then((res) => setData(res.data)).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="text-center text-muted" style={{ padding: 60 }}>Chargement du tableau de bord...</div>;
+  if (loading) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement du tableau de bord...</p></div>;
   if (!data) return <div className="alert alert-danger">Impossible de charger les données.</div>;
 
   const { stats, mensuel, parClasse, derniers, devise, annee } = data;
@@ -24,7 +24,7 @@ export default function Dashboard() {
     <div>
       <div className="stat-grid">
         <div className="stat-card">
-          <div className="stat-icon blue"><i className="ri-graduation-cap-line"></i></div>
+          <div className="stat-icon blue"><i className="ph-bold ph-graduation-cap"></i></div>
           <div className="stat-info">
             <div className="label">Élèves actifs</div>
             <div className="value">{stats.totalEleves}</div>
@@ -32,7 +32,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon purple"><i className="ri-building-4-line"></i></div>
+          <div className="stat-icon purple"><i className="ph-bold ph-buildings"></i></div>
           <div className="stat-info">
             <div className="label">Classes actives</div>
             <div className="value">{stats.totalClasses}</div>
@@ -40,7 +40,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon green"><i className="ri-money-dollar-circle-line"></i></div>
+          <div className="stat-icon green"><i className="ph-bold ph-currency-circle-dollar"></i></div>
           <div className="stat-info">
             <div className="label">Total encaissé</div>
             <div className="value">{fmt(stats.totalAnnee, devise)}</div>
@@ -48,7 +48,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon orange"><i className="ri-calendar-check-line"></i></div>
+          <div className="stat-icon orange"><i className="ph-bold ph-calendar-check"></i></div>
           <div className="stat-info">
             <div className="label">Aujourd'hui</div>
             <div className="value">{fmt(stats.paiementsAujourdhui, devise)}</div>
@@ -56,7 +56,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon blue"><i className="ri-percent-line"></i></div>
+          <div className="stat-icon blue"><i className="ph-bold ph-percent"></i></div>
           <div className="stat-info">
             <div className="label">Taux de recouvrement</div>
             <div className="value">{stats.taux}%</div>
@@ -64,7 +64,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon red"><i className="ri-alert-line"></i></div>
+          <div className="stat-icon red"><i className="ph-bold ph-warning"></i></div>
           <div className="stat-info">
             <div className="label">Élèves non soldés</div>
             <div className="value">{stats.elevesNonSoldes}</div>
@@ -75,37 +75,37 @@ export default function Dashboard() {
 
       <div className="grid-2 mb-16">
         <div className="card">
-          <div className="card-header"><i className="ri-line-chart-line"></i><h3>Évolution des encaissements (12 derniers mois)</h3></div>
+          <div className="card-header"><i className="ph ph-chart-line"></i><h3>Évolution des encaissements (12 derniers mois)</h3></div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={mensuel}>
                 <defs>
                   <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2557a7" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#2557a7" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#059669" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#059669" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef1f5" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e6efec" />
                 <XAxis dataKey="lbl" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => fmt(v, devise)} />
-                <Area type="monotone" dataKey="total" stroke="#2557a7" fill="url(#colorTotal)" strokeWidth={2} />
+                <Area type="monotone" dataKey="total" stroke="#059669" fill="url(#colorTotal)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="card">
-          <div className="card-header"><i className="ri-bar-chart-grouped-line"></i><h3>Recouvrement par classe</h3></div>
+          <div className="card-header"><i className="ph ph-chart-bar"></i><h3>Recouvrement par classe</h3></div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={parClasse}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef1f5" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e6efec" />
                 <XAxis dataKey="classe" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => fmt(v, devise)} />
-                <Bar dataKey="total_paye" fill="#e8a020" radius={[4, 4, 0, 0]} name="Payé" />
-                <Bar dataKey="total_attendu" fill="#d1dce8" radius={[4, 4, 0, 0]} name="Attendu" />
+                <Bar dataKey="total_paye" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Payé" />
+                <Bar dataKey="total_attendu" fill="#d7e3de" radius={[4, 4, 0, 0]} name="Attendu" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -114,7 +114,7 @@ export default function Dashboard() {
 
       <div className="card">
         <div className="card-header">
-          <i className="ri-history-line"></i><h3>Derniers paiements</h3>
+          <i className="ph ph-clock-counter-clockwise"></i><h3>Derniers paiements</h3>
           <div className="card-actions"><Link to="/paiements" className="btn btn-outline btn-sm">Voir tout</Link></div>
         </div>
         <div className="table-container">

@@ -3,7 +3,7 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import client from '../api/client.js';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-const COLORS = ['#2557a7', '#e8a020', '#16a34a', '#7c3aed', '#dc2626'];
+const COLORS = ['#059669', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626'];
 const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
 
 export default function Rapports() {
@@ -24,7 +24,7 @@ export default function Rapports() {
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [classeId, debut, fin]);
 
-  if (loading && !data) return <div className="text-center text-muted" style={{ padding: 60 }}>Chargement des rapports...</div>;
+  if (loading && !data) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement des rapports...</p></div>;
   if (!data) return null;
 
   const modeData = data.parMode.map((m) => ({ name: MODE_LABELS[m.mode_paiement] || m.mode_paiement, value: parseFloat(m.total) }));
@@ -44,37 +44,37 @@ export default function Rapports() {
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card">
-          <div className="stat-icon blue"><i className="ri-money-dollar-circle-line"></i></div>
+          <div className="stat-icon blue"><i className="ph ph-currency-circle-dollar"></i></div>
           <div className="stat-info"><div className="label">Total encaissé (période)</div><div className="value">{fmt(data.resume.total_usd)}</div></div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon green"><i className="ri-list-check-2"></i></div>
+          <div className="stat-icon green"><i className="ph ph-list-checks"></i></div>
           <div className="stat-info"><div className="label">Paiements</div><div className="value">{data.resume.nb_paiements}</div></div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon orange"><i className="ri-user-line"></i></div>
+          <div className="stat-icon orange"><i className="ph ph-user"></i></div>
           <div className="stat-info"><div className="label">Élèves actifs</div><div className="value">{data.totalElevesActifs}</div></div>
         </div>
       </div>
 
       <div className="grid-2 mb-16">
         <div className="card">
-          <div className="card-header"><i className="ri-line-chart-line"></i><h3>Évolution mensuelle</h3></div>
+          <div className="card-header"><i className="ph ph-chart-line"></i><h3>Évolution mensuelle</h3></div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={data.mensuel}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef1f5" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e6efec" />
                 <XAxis dataKey="mois_lbl" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => fmt(v)} />
-                <Line type="monotone" dataKey="total" stroke="#2557a7" strokeWidth={2.5} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="total" stroke="#059669" strokeWidth={2.5} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="card">
-          <div className="card-header"><i className="ri-donut-chart-line"></i><h3>Répartition par mode de paiement</h3></div>
+          <div className="card-header"><i className="ph ph-chart-donut"></i><h3>Répartition par mode de paiement</h3></div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
@@ -90,29 +90,29 @@ export default function Rapports() {
       </div>
 
       <div className="card mb-16">
-        <div className="card-header"><i className="ri-bar-chart-grouped-line"></i><h3>Recouvrement par classe</h3></div>
+        <div className="card-header"><i className="ph ph-chart-bar"></i><h3>Recouvrement par classe</h3></div>
         <div className="card-body">
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={data.parClasse}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef1f5" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e6efec" />
               <XAxis dataKey="classe" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v) => fmt(v)} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="total_paye" fill="#16a34a" name="Payé" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="total_attendu" fill="#d1dce8" name="Attendu" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="total_attendu" fill="#d7e3de" name="Attendu" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       <div className="card mb-16">
-        <div className="card-header"><i className="ri-crystal-ball-line"></i><h3>Prévisions financières (6 prochains mois)</h3></div>
+        <div className="card-header"><i className="ph ph-sparkle"></i><h3>Prévisions financières (6 prochains mois)</h3></div>
         <div className="card-body">
           <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            <div className="stat-card"><div className="stat-icon red"><i className="ri-arrow-down-line"></i></div><div className="stat-info"><div className="label">Conservateur</div><div className="value">{fmt(data.previsions.conservateur)}</div></div></div>
-            <div className="stat-card"><div className="stat-icon blue"><i className="ri-equalizer-line"></i></div><div className="stat-info"><div className="label">Réaliste</div><div className="value">{fmt(data.previsions.realiste)}</div></div></div>
-            <div className="stat-card"><div className="stat-icon green"><i className="ri-arrow-up-line"></i></div><div className="stat-info"><div className="label">Optimiste</div><div className="value">{fmt(data.previsions.optimiste)}</div></div></div>
+            <div className="stat-card"><div className="stat-icon red"><i className="ph ph-arrow-down"></i></div><div className="stat-info"><div className="label">Conservateur</div><div className="value">{fmt(data.previsions.conservateur)}</div></div></div>
+            <div className="stat-card"><div className="stat-icon blue"><i className="ph ph-sliders"></i></div><div className="stat-info"><div className="label">Réaliste</div><div className="value">{fmt(data.previsions.realiste)}</div></div></div>
+            <div className="stat-card"><div className="stat-icon green"><i className="ph ph-arrow-up"></i></div><div className="stat-info"><div className="label">Optimiste</div><div className="value">{fmt(data.previsions.optimiste)}</div></div></div>
           </div>
           <p className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Estimation basée sur la moyenne mensuelle observée sur la période sélectionnée.</p>
         </div>

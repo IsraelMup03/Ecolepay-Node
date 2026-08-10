@@ -78,10 +78,10 @@ export default function Utilisateurs() {
 
   return (
     <div>
-      {notice && <div className="alert alert-success"><i className="ri-information-line"></i> {notice}</div>}
+      {notice && <div className="alert alert-success"><i className="ph ph-info"></i> {notice}</div>}
       <div className="flex-between mb-16">
         <div className="text-muted">{users.length} utilisateur(s)</div>
-        <button className="btn btn-accent" onClick={openNew}><i className="ri-user-add-line"></i> Nouvel utilisateur</button>
+        <button className="btn btn-accent" onClick={openNew}><i className="ph ph-user-plus"></i> Nouvel utilisateur</button>
       </div>
 
       <div className="card">
@@ -89,7 +89,7 @@ export default function Utilisateurs() {
           <table>
             <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th><th>Dernière connexion</th><th></th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={6} className="text-center text-muted">Chargement...</td></tr>}
+              {loading && <tr><td colSpan={6}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && users.map((u) => (
                 <tr key={u.id}>
                   <td><strong>{u.prenom} {u.nom}</strong></td>
@@ -98,9 +98,9 @@ export default function Utilisateurs() {
                   <td><span className={`badge ${u.actif ? 'badge-success' : 'badge-default'}`}>{u.actif ? 'Actif' : 'Désactivé'}</span></td>
                   <td className="text-muted">{u.derniere_connexion ? new Date(u.derniere_connexion).toLocaleString('fr-FR') : 'Jamais'}</td>
                   <td className="flex gap-8">
-                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(u)}><i className="ri-edit-line"></i></button>
-                    <button className="btn btn-warning btn-sm" onClick={() => reinitMdp(u)}><i className="ri-key-2-line"></i></button>
-                    {u.actif ? <button className="btn btn-danger btn-sm" onClick={() => desactiver(u)}><i className="ri-user-forbid-line"></i></button> : null}
+                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(u)}><i className="ph ph-pencil-simple"></i></button>
+                    <button className="btn btn-warning btn-sm" onClick={() => reinitMdp(u)}><i className="ph ph-key"></i></button>
+                    {u.actif ? <button className="btn btn-danger btn-sm" onClick={() => desactiver(u)}><i className="ph ph-user-minus"></i></button> : null}
                   </td>
                 </tr>
               ))}
@@ -111,11 +111,12 @@ export default function Utilisateurs() {
 
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
-          <div className="modal-header"><i className="ri-user-settings-line"></i><h3>{editing ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur'}</h3><button className="modal-close" onClick={() => setShowModal(false)}>✕</button></div>
+          <div className="modal-header"><i className="ph ph-user-gear"></i><h3>{editing ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur'}</h3><button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button></div>
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
               {error && <div className="alert alert-danger">{error}</div>}
               <div className="form-grid">
+                <div className="form-section-title">Identité</div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Nom *</label><input value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} required /></div>
                   <div className="form-group"><label>Prénom *</label><input value={form.prenom} onChange={(e) => setForm({ ...form, prenom: e.target.value })} required /></div>
@@ -124,6 +125,7 @@ export default function Utilisateurs() {
                   <label>Email *</label>
                   <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required disabled={!!editing} />
                 </div>
+                <div className="form-section-title">Rôle &amp; permissions</div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group">
                     <label>Rôle</label>

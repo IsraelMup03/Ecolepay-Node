@@ -21,7 +21,7 @@ export default function Logs() {
     <div>
       <div className="filters-bar">
         <div className="search-input-wrap" style={{ flex: 1, minWidth: 220 }}>
-          <i className="ri-search-line"></i>
+          <i className="ph ph-magnifying-glass"></i>
           <input placeholder="Rechercher une action..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         </div>
       </div>
@@ -31,7 +31,7 @@ export default function Logs() {
           <table>
             <thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Détails</th><th>IP</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={5} className="text-center text-muted">Chargement...</td></tr>}
+              {loading && <tr><td colSpan={5}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && rows.length === 0 && <tr><td colSpan={5} className="text-center text-muted">Aucune entrée.</td></tr>}
               {rows.map((l) => (
                 <tr key={l.id}>

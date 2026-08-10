@@ -38,7 +38,7 @@ export default function EleveDetail() {
     navigate('/eleves');
   }
 
-  if (loading) return <div className="text-center text-muted" style={{ padding: 60 }}>Chargement...</div>;
+  if (loading) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement...</p></div>;
   if (!data) return <div className="alert alert-danger">Élève introuvable.</div>;
 
   const { eleve, paiements, totaux } = data;
@@ -49,7 +49,7 @@ export default function EleveDetail() {
 
       <div className="grid-2 mb-16">
         <div className="card">
-          <div className="card-header"><i className="ri-user-line"></i><h3>Informations de l'élève</h3></div>
+          <div className="card-header"><i className="ph ph-user"></i><h3>Informations de l'élève</h3></div>
           <div className="card-body">
             <div className="flex gap-14 mb-16" style={{ alignItems: 'center' }}>
               <div className={eleve.genre === 'F' ? 'genre-f' : 'genre-m'} style={{ width: 48, height: 48, fontSize: 16 }}>{eleve.genre}</div>
@@ -72,15 +72,15 @@ export default function EleveDetail() {
             </table>
 
             <div className="flex gap-8" style={{ marginTop: 18 }}>
-              <button className="btn btn-outline" onClick={() => navigate('/caisse')}><i className="ri-cash-line"></i> Enregistrer un paiement</button>
-              {eleve.classe_inf_nom && <button className="btn btn-warning" onClick={retrograder}><i className="ri-arrow-down-circle-line"></i> Rétrograder</button>}
-              <button className="btn btn-danger" onClick={archiver}><i className="ri-archive-line"></i> Archiver</button>
+              <button className="btn btn-outline" onClick={() => navigate('/caisse')}><i className="ph ph-money"></i> Enregistrer un paiement</button>
+              {eleve.classe_inf_nom && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
+              <button className="btn btn-danger" onClick={archiver}><i className="ph ph-archive"></i> Archiver</button>
             </div>
           </div>
         </div>
 
         <div className="card">
-          <div className="card-header"><i className="ri-wallet-3-line"></i><h3>Situation financière</h3></div>
+          <div className="card-header"><i className="ph ph-wallet"></i><h3>Situation financière</h3></div>
           <div className="card-body">
             <div className="mb-16">
               <div className="flex-between mb-12"><span>Scolarité</span><span><strong>{fmt(totaux.totalPayeScolarite)}</strong> / {fmt(eleve.frais_scolarite_total)}</span></div>
@@ -91,11 +91,11 @@ export default function EleveDetail() {
             </div>
             <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div className="stat-card">
-                <div className="stat-icon green"><i className="ri-checkbox-circle-line"></i></div>
+                <div className="stat-icon green"><i className="ph ph-check-circle"></i></div>
                 <div className="stat-info"><div className="label">Inscription payée</div><div className="value" style={{ fontSize: 16 }}>{fmt(totaux.totalPayeInscription)}</div></div>
               </div>
               <div className="stat-card">
-                <div className="stat-icon red"><i className="ri-refund-2-line"></i></div>
+                <div className="stat-icon red"><i className="ph ph-arrow-counter-clockwise"></i></div>
                 <div className="stat-info"><div className="label">Total remboursé</div><div className="value" style={{ fontSize: 16 }}>{fmt(totaux.totalRembourse)}</div></div>
               </div>
             </div>
@@ -104,7 +104,7 @@ export default function EleveDetail() {
       </div>
 
       <div className="card">
-        <div className="card-header"><i className="ri-history-line"></i><h3>Historique des paiements</h3></div>
+        <div className="card-header"><i className="ph ph-clock-counter-clockwise"></i><h3>Historique des paiements</h3></div>
         <div className="table-container">
           <table>
             <thead><tr><th>Référence</th><th>Type</th><th>Montant</th><th>Mode</th><th>Statut</th><th>Date</th><th>Comptable</th><th></th></tr></thead>
@@ -119,7 +119,7 @@ export default function EleveDetail() {
                   <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
-                  <td><button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')}><i className="ri-printer-line"></i></button></td>
+                  <td><button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')}><i className="ph ph-printer"></i></button></td>
                 </tr>
               ))}
             </tbody>

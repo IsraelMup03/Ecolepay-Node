@@ -44,14 +44,14 @@ export default function Profil() {
     }
   }
 
-  if (!data) return <div className="text-center text-muted" style={{ padding: 60 }}>Chargement...</div>;
+  if (!data) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement...</p></div>;
 
   return (
     <div className="grid-2">
-      {notice && <div className="alert alert-success" style={{ gridColumn: '1 / -1' }}><i className="ri-check-line"></i> {notice}</div>}
+      {notice && <div className="alert alert-success" style={{ gridColumn: '1 / -1' }}><i className="ph ph-check"></i> {notice}</div>}
 
       <div className="card">
-        <div className="card-header"><i className="ri-user-line"></i><h3>Mes informations</h3></div>
+        <div className="card-header"><i className="ph ph-user"></i><h3>Mes informations</h3></div>
         <form onSubmit={saveProfil}>
           <div className="card-body">
             <div className="form-grid">
@@ -70,7 +70,7 @@ export default function Profil() {
       </div>
 
       <div className="card">
-        <div className="card-header"><i className="ri-lock-password-line"></i><h3>Changer le mot de passe</h3></div>
+        <div className="card-header"><i className="ph ph-lock-key"></i><h3>Changer le mot de passe</h3></div>
         <form onSubmit={changePwd}>
           <div className="card-body">
             {pwdError && <div className="alert alert-danger">{pwdError}</div>}

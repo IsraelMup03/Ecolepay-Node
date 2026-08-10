@@ -62,7 +62,7 @@ export default function Classes() {
     <div>
       <div className="flex-between mb-16">
         <div className="text-muted">{classes.filter((c) => c.actif).length} classe(s) active(s)</div>
-        <button className="btn btn-accent" onClick={openNew}><i className="ri-add-line"></i> Nouvelle classe</button>
+        <button className="btn btn-accent" onClick={openNew}><i className="ph ph-plus"></i> Nouvelle classe</button>
       </div>
 
       <div className="card">
@@ -70,7 +70,7 @@ export default function Classes() {
           <table>
             <thead><tr><th>Ordre</th><th>Nom</th><th>Frais scolarité</th><th>Frais inscription</th><th>Effectif max</th><th>Classe suivante</th><th>Statut</th><th></th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="text-center text-muted">Chargement...</td></tr>}
+              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && classes.map((c) => (
                 <tr key={c.id}>
                   <td>{c.ordre}</td>
@@ -81,8 +81,8 @@ export default function Classes() {
                   <td className="text-muted">{classes.find((x) => x.id === c.classe_superieure_id)?.nom || '—'}</td>
                   <td><span className={`badge ${c.actif ? 'badge-success' : 'badge-default'}`}>{c.actif ? 'Active' : 'Archivée'}</span></td>
                   <td className="flex gap-8">
-                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(c)}><i className="ri-edit-line"></i></button>
-                    {c.actif ? <button className="btn btn-danger btn-sm" onClick={() => archiver(c)}><i className="ri-archive-line"></i></button> : null}
+                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(c)}><i className="ph ph-pencil-simple"></i></button>
+                    {c.actif ? <button className="btn btn-danger btn-sm" onClick={() => archiver(c)}><i className="ph ph-archive"></i></button> : null}
                   </td>
                 </tr>
               ))}
@@ -94,8 +94,8 @@ export default function Classes() {
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
           <div className="modal-header">
-            <i className="ri-building-4-line"></i><h3>{editing ? 'Modifier la classe' : 'Nouvelle classe'}</h3>
-            <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
+            <i className="ph ph-buildings"></i><h3>{editing ? 'Modifier la classe' : 'Nouvelle classe'}</h3>
+            <button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button>
           </div>
           <form onSubmit={handleSubmit}>
             <div className="modal-body">

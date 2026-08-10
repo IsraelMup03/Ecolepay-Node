@@ -72,19 +72,16 @@ export default function Caisse() {
     <div className="grid-2">
       <div>
         <div className="card mb-16">
-          <div className="card-header"><i className="ri-user-search-line"></i><h3>Rechercher un élève</h3></div>
+          <div className="card-header"><i className="ph ph-user-focus"></i><h3>Rechercher un élève</h3></div>
           <div className="card-body">
             <div className="search-input-wrap">
-              <i className="ri-search-line"></i>
+              <i className="ph ph-magnifying-glass"></i>
               <input placeholder="Nom, prénom ou matricule..." value={query} onChange={(e) => handleSearch(e.target.value)} />
             </div>
             {results.length > 0 && (
-              <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+              <div className="search-results">
                 {results.map((e) => (
-                  <div key={e.id} onClick={() => selectEleve(e)}
-                    style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}
-                    onMouseEnter={(ev) => ev.currentTarget.style.background = '#fafcfe'}
-                    onMouseLeave={(ev) => ev.currentTarget.style.background = '#fff'}>
+                  <div key={e.id} className="search-result-item" onClick={() => selectEleve(e)}>
                     <span><strong>{e.prenom} {e.nom}</strong> — {e.matricule} · {e.classe}</span>
                     <span className="text-muted">Reste: {fmt(e.reste)}</span>
                   </div>
@@ -96,7 +93,7 @@ export default function Caisse() {
 
         {caisseInfo && (
           <div className="card">
-            <div className="card-header"><i className="ri-file-user-line"></i><h3>Fiche élève</h3></div>
+            <div className="card-header"><i className="ph ph-identification-card"></i><h3>Fiche élève</h3></div>
             <div className="card-body">
               <div className="mb-12"><strong>{caisseInfo.eleve.prenom} {caisseInfo.eleve.nom}</strong> — {caisseInfo.eleve.matricule}</div>
               <div className="text-muted mb-16">{caisseInfo.eleve.classe_nom}</div>
@@ -131,14 +128,14 @@ export default function Caisse() {
       </div>
 
       <div className="card">
-        <div className="card-header"><i className="ri-cash-line"></i><h3>Enregistrer un paiement</h3></div>
+        <div className="card-header"><i className="ph ph-money"></i><h3>Enregistrer un paiement</h3></div>
         <div className="card-body">
-          {error && <div className="alert alert-danger"><i className="ri-error-warning-line"></i> {error}</div>}
+          {error && <div className="alert alert-danger"><i className="ph ph-warning-circle"></i> {error}</div>}
           {success && (
             <div className="alert alert-success">
-              <i className="ri-check-line"></i> Paiement enregistré ! Réf: {success.reference}
+              <i className="ph ph-check"></i> Paiement enregistré ! Réf: {success.reference}
               <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.open(`/recu/${success.id}`, '_blank')}>
-                <i className="ri-printer-line"></i> Imprimer le reçu
+                <i className="ph ph-printer"></i> Imprimer le reçu
               </button>
             </div>
           )}
@@ -190,7 +187,7 @@ export default function Caisse() {
               </div>
 
               <button className="btn btn-accent btn-block" type="submit" disabled={loading || !selected}>
-                {loading ? 'Enregistrement...' : <><i className="ri-checkbox-circle-line"></i> Valider le paiement</>}
+                {loading ? 'Enregistrement...' : <><i className="ph ph-check-circle"></i> Valider le paiement</>}
               </button>
             </div>
           </form>

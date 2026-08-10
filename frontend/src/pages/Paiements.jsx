@@ -32,7 +32,7 @@ export default function Paiements() {
     <div>
       <div className="filters-bar">
         <div className="search-input-wrap" style={{ flex: 1, minWidth: 200 }}>
-          <i className="ri-search-line"></i>
+          <i className="ph ph-magnifying-glass"></i>
           <input placeholder="Référence, nom, matricule..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         </div>
         <div className="form-group">
@@ -55,11 +55,11 @@ export default function Paiements() {
 
       <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="stat-card">
-          <div className="stat-icon blue"><i className="ri-list-check-2"></i></div>
+          <div className="stat-icon blue"><i className="ph ph-list-checks"></i></div>
           <div className="stat-info"><div className="label">Paiements trouvés</div><div className="value">{meta.total}</div></div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon green"><i className="ri-money-dollar-circle-line"></i></div>
+          <div className="stat-icon green"><i className="ph ph-currency-circle-dollar"></i></div>
           <div className="stat-info"><div className="label">Montant total</div><div className="value">{fmt(meta.somme)}</div></div>
         </div>
       </div>
@@ -69,8 +69,8 @@ export default function Paiements() {
           <table>
             <thead><tr><th>Référence</th><th>Élève</th><th>Classe</th><th>Type</th><th>Montant</th><th>Mode</th><th>Date</th><th>Comptable</th><th></th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="text-center text-muted">Chargement...</td></tr>}
-              {!loading && rows.length === 0 && <tr><td colSpan={9}><div className="empty-state"><i className="ri-bank-card-line"></i><h3>Aucun paiement trouvé</h3></div></td></tr>}
+              {loading && <tr><td colSpan={9}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && rows.length === 0 && <tr><td colSpan={9}><div className="empty-state"><i className="ph ph-credit-card"></i><h3>Aucun paiement trouvé</h3></div></td></tr>}
               {rows.map((p) => (
                 <tr key={p.id}>
                   <td><code>{p.reference}</code></td>
@@ -81,7 +81,7 @@ export default function Paiements() {
                   <td>{p.mode_paiement}</td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
-                  <td><button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')}><i className="ri-printer-line"></i></button></td>
+                  <td><button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')}><i className="ph ph-printer"></i></button></td>
                 </tr>
               ))}
             </tbody>

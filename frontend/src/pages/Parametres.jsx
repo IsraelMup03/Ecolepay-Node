@@ -60,15 +60,15 @@ export default function Parametres() {
     }
   }
 
-  if (!ecole) return <div className="text-center text-muted" style={{ padding: 60 }}>Chargement...</div>;
+  if (!ecole) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement...</p></div>;
 
   return (
     <div>
-      {notice && <div className="alert alert-success"><i className="ri-check-line"></i> {notice}</div>}
+      {notice && <div className="alert alert-success"><i className="ph ph-check"></i> {notice}</div>}
 
       <div className="grid-2 mb-16">
         <div className="card">
-          <div className="card-header"><i className="ri-school-line"></i><h3>Informations de l'école</h3></div>
+          <div className="card-header"><i className="ph ph-chalkboard-teacher"></i><h3>Informations de l'école</h3></div>
           <form onSubmit={saveEcole}>
             <div className="card-body">
               <div className="form-grid">
@@ -95,7 +95,7 @@ export default function Parametres() {
         </div>
 
         <div className="card">
-          <div className="card-header"><i className="ri-settings-3-line"></i><h3>Paramètres système</h3></div>
+          <div className="card-header"><i className="ph ph-gear-six"></i><h3>Paramètres système</h3></div>
           <form onSubmit={saveSysteme}>
             <div className="card-body">
               <div className="form-grid">
@@ -121,13 +121,13 @@ export default function Parametres() {
 
       {user.role === 'admin' && (
         <div className="card" style={{ borderColor: '#fecaca' }}>
-          <div className="card-header"><i className="ri-error-warning-line" style={{ color: 'var(--danger)' }}></i><h3 style={{ color: 'var(--danger)' }}>Zone dangereuse</h3></div>
+          <div className="card-header"><i className="ph ph-warning-circle" style={{ color: 'var(--danger)' }}></i><h3 style={{ color: 'var(--danger)' }}>Zone dangereuse</h3></div>
           <div className="card-body">
             <p className="text-muted mb-16">Cette action supprime définitivement tous les élèves, classes et paiements. Elle est irréversible. Tapez <code>CONFIRMER</code> pour activer le bouton.</p>
             <div className="flex gap-8">
               <input placeholder="Tapez CONFIRMER" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} style={{ maxWidth: 240, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8 }} />
               <button className="btn btn-danger" disabled={confirmation !== 'CONFIRMER' || resetLoading} onClick={reinitialiser}>
-                {resetLoading ? 'Réinitialisation...' : <><i className="ri-delete-bin-line"></i> Réinitialiser l'application</>}
+                {resetLoading ? 'Réinitialisation...' : <><i className="ph ph-trash"></i> Réinitialiser l'application</>}
               </button>
             </div>
           </div>
