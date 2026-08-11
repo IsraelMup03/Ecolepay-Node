@@ -3,7 +3,7 @@ import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Parametres() {
-  const { user } = useAuth();
+  const { user, setEcole: setAuthEcole } = useAuth();
   const [ecole, setEcole] = useState(null);
   const [params, setParams] = useState({});
   const [ecoleForm, setEcoleForm] = useState(null);
@@ -33,10 +33,11 @@ export default function Parametres() {
     Object.entries(ecoleForm).forEach(([k, v]) => { if (v !== null && k !== 'logo' && k !== 'id' && k !== 'date_creation' && k !== 'updated_at') fd.append(k, v); });
     if (logoFile) fd.append('logo', logoFile);
     try {
-      await client.put('/parametres/ecole', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await client.put('/parametres/ecole', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setEcole(res.data.ecole);
+      setAuthEcole(res.data.ecole);
       setNotice("Informations de l'école mises à jour.");
       setShowEcoleModal(false);
-      load();
     } finally {
       setSaving(false);
     }

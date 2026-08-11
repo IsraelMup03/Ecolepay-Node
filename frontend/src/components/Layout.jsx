@@ -92,9 +92,7 @@ export default function Layout({ children }) {
 
       <aside className="nav-panel">
         <div className="nav-panel-brand">
-          {ecole?.logo && (
-            <img src={`${API_URL.replace(/\/api$/, '')}/uploads/logos/${ecole.logo}`} alt="logo" className="brand-logo" />
-          )}
+          <div className="brand-icon"><i className="ph-fill ph-graduation-cap"></i></div>
           <div className="name">{ecole?.nom || 'EcolePay'}</div>
         </div>
         {activeGroup && (
