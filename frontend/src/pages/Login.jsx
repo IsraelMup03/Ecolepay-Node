@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { API_URL } from '../api/client.js';
 
 export default function Login() {
   const { login } = useAuth();
@@ -9,6 +10,25 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [ecoleLogo, setEcoleLogo] = useState(null);
+  const [ecoleName, setEcoleName] = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`${API_URL}/parametres/ecole-public`);
+        const json = await res.json();
+        const e = json?.ecole;
+        if (e) {
+          setEcoleName(e.nom || null);
+          if (e.logo) setEcoleLogo(`${API_URL.replace(/\/api$/, '')}/uploads/logos/${e.logo}`);
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+    load();
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -32,8 +52,10 @@ export default function Login() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-header">
-          <div className="school-logo-placeholder"><i className="ph-fill ph-graduation-cap"></i></div>
-          <h1>EcolePay</h1>
+          <div className="school-logo-placeholder">
+            {ecoleLogo ? <img src={ecoleLogo} alt="logo" className="login-logo" /> : <i className="ph-fill ph-graduation-cap"></i>}
+          </div>
+          <h1>{ecoleName || 'EcolePay'}</h1>
           <p>Gestion des paiements scolaires</p>
         </div>
         <div className="login-body">

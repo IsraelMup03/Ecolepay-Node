@@ -4,6 +4,23 @@ const { requireAuth, requirePermission } = require('../middleware/auth');
 const { genererReferencePaiement, logActivite, getEcole, getParam } = require('../utils/helpers');
 
 const router = express.Router();
+
+// GET /api/paiements/:id/verify  (verification du recu public)
+router.get('/:id/verify', async (req, res) => {
+  const { id } = req.params;
+  const [[p]] = await db.query(
+    `SELECT p.*, e.nom as e_nom, e.prenom as e_prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+     FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
+     LEFT JOIN utilisateurs u ON u.id=p.comptable_id
+     WHERE p.id=?`,
+    [id]
+  );
+  if (!p) return res.status(404).json({ error: 'Reçu introuvable.' });
+
+  const ecole = await getEcole();
+  res.json({ verified: true, paiement: p, ecole });
+});
+
 router.use(requireAuth);
 
 // GET /api/paiements  (historique paginé avec filtres)
@@ -81,6 +98,8 @@ router.get('/:id/recu', async (req, res) => {
   const ecole = await getEcole();
   res.json({ paiement: p, resteApres, pctPaye, ecole });
 });
+
+// (route de vérification déjà définie en début de fichier)
 
 // POST /api/paiements  (enregistrement d'un paiement - equivalent caisse.php)
 router.post('/', requirePermission('paiements'), async (req, res) => {

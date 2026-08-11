@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { API_URL } from '../api/client.js';
 
 const NAV_GROUPS = [
   { section: 'Général', railIcon: 'ph-bold ph-house', items: [
@@ -54,7 +55,7 @@ function findGroupIndex(groups, pathname) {
 }
 
 export default function Layout({ children }) {
-  const { user, logout, hasPermission } = useAuth();
+  const { user, logout, hasPermission, ecole } = useAuth();
   const location = useLocation();
   const [title, subtitle] = PAGE_TITLES[location.pathname] || ['EcolePay', ''];
   const [manualSection, setManualSection] = useState(null);
@@ -73,7 +74,13 @@ export default function Layout({ children }) {
   return (
     <div className="app-shell">
       <aside className="nav-rail">
-        <NavLink to="/" className="nav-rail-logo"><i className="ph-fill ph-graduation-cap"></i></NavLink>
+        <NavLink to="/" className="nav-rail-logo">
+          {ecole?.logo ? (
+            <img src={`${API_URL.replace(/\/api$/, '')}/uploads/logos/${ecole.logo}`} alt="logo" className="nav-logo-img" />
+          ) : (
+            <i className="ph-fill ph-graduation-cap"></i>
+          )}
+        </NavLink>
         <div className="nav-rail-groups">
           {visibleGroups.map((g, i) => (
             <button key={g.section} type="button" title={g.section} className={i === activeIndex ? 'nav-rail-btn active' : 'nav-rail-btn'} onClick={() => setManualSection(i)}>
@@ -85,7 +92,10 @@ export default function Layout({ children }) {
 
       <aside className="nav-panel">
         <div className="nav-panel-brand">
-          <div className="name">EcolePay</div>
+          {ecole?.logo && (
+            <img src={`${API_URL.replace(/\/api$/, '')}/uploads/logos/${ecole.logo}`} alt="logo" className="brand-logo" />
+          )}
+          <div className="name">{ecole?.nom || 'EcolePay'}</div>
         </div>
         {activeGroup && (
           <div className="nav-panel-section">
@@ -99,7 +109,7 @@ export default function Layout({ children }) {
             </nav>
           </div>
         )}
-        <div className="nav-panel-footer">EcolePay</div>
+        <div className="nav-panel-footer">{ecole?.nom || 'EcolePay'}</div>
       </aside>
 
       <div className="main-area">

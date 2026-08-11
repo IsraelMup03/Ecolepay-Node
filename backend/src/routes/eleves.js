@@ -49,13 +49,30 @@ router.get('/search', async (req, res) => {
 // GET /api/eleves/by-classe/:classeId (remplace api/eleves_classe.php)
 router.get('/by-classe/:classeId', async (req, res) => {
   const { classeId } = req.params;
+  const payerName = (process.env.DB_CLIENT || '').toLowerCase() === 'sqlite'
+    ? "COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')"
+    : "CONCAT_WS(' ', u.prenom, u.nom)";
+  const payerConcat = (process.env.DB_CLIENT || '').toLowerCase() === 'sqlite'
+    ? `REPLACE(GROUP_CONCAT(DISTINCT ${payerName}), ',', ', ')`
+    : `GROUP_CONCAT(DISTINCT ${payerName} SEPARATOR ', ')`;
+  const dateExpr = (process.env.DB_CLIENT || '').toLowerCase() === 'sqlite'
+    ? 'p2.date_paiement'
+    : "DATE_FORMAT(p2.date_paiement, '%Y-%m-%d %H:%i:%s')";
+
   const [rows] = await db.query(
     `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye,
+            (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as dernier_paiement_date,
+            (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
      FROM eleves e WHERE e.classe_id=? AND e.statut='actif' ORDER BY e.nom ASC, e.prenom ASC`,
     [classeId]
   );
-  res.json(rows.map((e) => ({ ...e, reste: Math.max(0, e.frais_scolarite_total - e.total_paye) })));
+  res.json(rows.map((e) => ({
+    ...e,
+    reste: Math.max(0, (e.frais_scolarite_total || 0) - (e.total_paye || 0)),
+    dernier_paiement_date: e.dernier_paiement_date || '',
+    perce_par: e.perce_par || '',
+  })));
 });
 
 // GET /api/eleves/export.csv

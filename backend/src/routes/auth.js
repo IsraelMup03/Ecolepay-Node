@@ -51,7 +51,12 @@ router.post('/login', async (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', requireAuth, async (req, res) => {
-  res.json({ user: req.user });
+  try {
+    const ecole = await getEcole();
+    res.json({ user: req.user, ecole });
+  } catch (e) {
+    res.json({ user: req.user });
+  }
 });
 
 // POST /api/auth/change-password

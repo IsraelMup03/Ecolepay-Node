@@ -62,6 +62,8 @@ a { color: inherit; }
   box-shadow: 0 4px 14px rgba(232, 160, 32, .4);
   margin-bottom: 18px;
 }
+/* logo image fits the round nav badge */
+.nav-rail-logo img.nav-logo-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .nav-rail-groups { flex: 1; display: flex; flex-direction: column; gap: 6px; width: 100%; align-items: center; }
 .nav-rail-btn {
   width: 44px; height: 44px; border-radius: var(--radius-sm);
@@ -91,7 +93,8 @@ a { color: inherit; }
   overflow-y: auto;
   z-index: 10;
 }
-.nav-panel-brand { padding: 22px 18px; border-bottom: 1px solid var(--border-light); }
+.nav-panel-brand { padding: 22px 18px; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; gap: 10px; }
+.nav-panel-brand .brand-logo { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; display: block; }
 .nav-panel-brand .name { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; color: var(--text); }
 .nav-panel-brand .sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 
@@ -383,6 +386,7 @@ code { font-family: 'SFMono-Regular', Consolas, monospace; }
   font-size: 30px; margin: 0 auto 12px; color: #fff;
   box-shadow: 0 8px 20px rgba(0,0,0,.18);
 }
+.login-header .school-logo-placeholder img.login-logo { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .login-header h1 { font-family: 'Playfair Display', serif; font-size: 22px; color: #fff; font-weight: 700; margin-bottom: 4px; }
 .login-header p { color: rgba(255,255,255,0.75); font-size: 13px; }
 .login-badge { display: inline-block; background: var(--accent); color: var(--primary); font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-top: 8px; letter-spacing: 1px; text-transform: uppercase; }
@@ -422,6 +426,12 @@ code { font-family: 'SFMono-Regular', Consolas, monospace; }
 .receipt-toolbar { text-align: right; margin-bottom: 16px; }
 .receipt-card { border: 2px solid var(--primary); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); }
 .receipt-header { background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: #fff; padding: 24px 30px; text-align: center; }
+.receipt-header .receipt-logo-placeholder {
+  width: 72px; height: 72px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center;
+  font-size: 30px; margin: 0 auto 12px; color: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.12);
+}
+.receipt-header .receipt-logo-placeholder img.receipt-logo-top { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .receipt-header .school-name { font-size: 22px; font-family: 'Playfair Display', serif; font-weight: 700; }
 .receipt-header .school-meta { font-size: 12px; opacity: .85; margin-top: 4px; }
 .receipt-header .receipt-title { margin-top: 12px; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }
@@ -433,8 +443,15 @@ code { font-family: 'SFMono-Regular', Consolas, monospace; }
 .receipt-table td.value { text-align: right; font-weight: 700; }
 .receipt-amount { background: var(--bg); border-radius: var(--radius-sm); padding: 14px 18px; margin-bottom: 18px; }
 .receipt-amount-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; color: var(--primary); }
+.receipt-top-grid { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.receipt-qr-block { min-width: 150px; border: 1px solid rgba(255,255,255,0.25); border-radius: 16px; background: rgba(255,255,255,0.08); padding: 14px; text-align: center; }
+.receipt-qr { width: 150px; height: 150px; object-fit: cover; border-radius: 12px; }
+.receipt-qr-label { margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.8); }
+.receipt-subtitle { font-size: 14px; margin-bottom: 10px; color: var(--text); font-weight: 700; }
+.receipt-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+.receipt-meta-row-item { margin-bottom: 8px; font-size: 14px; }
 .receipt-progress-note { font-size: 12px; color: var(--text-muted); margin-bottom: 18px; }
-.receipt-footer-row { display: flex; justify-content: space-between; margin-top: 30px; font-size: 12px; color: var(--text-muted); }
+.receipt-footer-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 30px; font-size: 12px; color: var(--text-muted); }
 .receipt-signature { margin-top: 14px; font-size: 12px; }
 
 @media print {

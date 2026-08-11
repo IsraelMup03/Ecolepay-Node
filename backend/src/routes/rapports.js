@@ -111,4 +111,114 @@ router.get('/', async (req, res) => {
   });
 });
 
+// --- CSV export endpoints ---
+// GET /api/rapports/download/eleves.csv?classe_id=&status=solde|non_solde
+router.get('/download/eleves.csv', async (req, res) => {
+  try {
+    const { classe_id, status } = req.query;
+    const dbClient = (process.env.DB_CLIENT || '').toLowerCase();
+    const payerName = dbClient === 'sqlite'
+      ? "COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')"
+      : "CONCAT_WS(' ', u.prenom, u.nom)";
+    const payerConcat = dbClient === 'sqlite'
+      ? `REPLACE(GROUP_CONCAT(DISTINCT ${payerName}), ',', ', ')`
+      : `GROUP_CONCAT(DISTINCT ${payerName} SEPARATOR ', ')`;
+    const dateExpr = dbClient === 'sqlite'
+      ? 'p2.date_paiement'
+      : "DATE_FORMAT(p2.date_paiement, '%Y-%m-%d %H:%i:%s')";
+
+    const [classRows] = classe_id ? await db.query('SELECT nom FROM classes WHERE id=?', [classe_id]) : [[]];
+    const className = classe_id ? (classRows[0]?.nom || classe_id) : 'Toutes';
+
+    const params = [];
+    let statusCondition = '';
+    if (status === 'solde') {
+      statusCondition = `AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide')`;
+    } else if (status === 'non_solde') {
+      statusCondition = `AND e.frais_scolarite_total > (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide')`;
+    }
+    if (classe_id) params.push(classe_id);
+
+    const [rows] = await db.query(
+      `SELECT e.matricule, e.nom, e.prenom, c.nom as classe,
+              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye,
+              COALESCE(e.frais_scolarite_total,0) - COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as reste,
+              (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as date_paiement,
+              (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
+       FROM eleves e JOIN classes c ON c.id=e.classe_id
+       WHERE e.statut='actif' ${classe_id ? 'AND e.classe_id=?' : ''} ${statusCondition}
+       ORDER BY e.nom ASC`,
+      params
+    );
+
+    const meta = [];
+    meta.push(`# Rapport: Liste des élèves (${status === 'solde' ? 'Soldés' : status === 'non_solde' ? 'Non soldés' : 'Tous'})`);
+    meta.push(`# Classe: ${className}`);
+    meta.push(`# Généré le: ${new Date().toLocaleString()}`);
+    meta.push('# Colonnes: Matricule;Nom;Prénom;Total payé;Reste;Date paiement;Perçu par;Classe');
+
+    const header = ['Matricule', 'Nom', 'Prénom', 'Total payé', 'Reste', 'Date paiement', 'Perçu par', 'Classe'];
+    const lines = [header.join(';')];
+    rows.forEach((e) => {
+      lines.push([
+        e.matricule || '',
+        e.nom || '',
+        e.prenom || '',
+        e.total_paye || 0,
+        e.reste || 0,
+        e.date_paiement || '',
+        e.perce_par || '',
+        e.classe || '',
+      ].join(';'));
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
+    res.setHeader('Content-Disposition', `attachment; filename="eleves_${status || 'liste'}_${Date.now()}.csv"`);
+    res.send('\uFEFF' + meta.join('\n') + '\n' + lines.join('\n'));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+  }
+});
+
+// GET /api/rapports/download/paiements-today.csv?date=YYYY-MM-DD
+router.get('/download/paiements-today.csv', async (req, res) => {
+  try {
+    const date = req.query.date || null;
+    const params = [];
+    const dateFilter = date ? 'DATE(p.date_paiement)=?' : 'DATE(p.date_paiement)=CURDATE()';
+    if (date) params.push(date);
+
+    const [rows] = await db.query(
+      `SELECT p.reference, p.montant_usd as montant_usd, p.devise, p.mode_paiement, p.type_paiement, p.statut,
+              p.date_paiement, e.matricule, e.nom, e.prenom, c.nom as classe
+       FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
+       WHERE ${dateFilter} AND p.statut='valide' ORDER BY p.date_paiement ASC`,
+      params
+    );
+
+    const total = rows.reduce((s, r) => s + parseFloat(r.montant_usd || 0), 0);
+
+    const meta = [];
+    meta.push('# Rapport: Paiements du jour');
+    meta.push(`# Date: ${date || new Date().toISOString().slice(0,10)}`);
+    meta.push(`# Nombre de paiements: ${rows.length}`);
+    meta.push(`# Total (USD): ${total.toFixed(2)}`);
+    meta.push('# Colonnes: Reference;Montant(USD);Devise;Mode;Type;Statut;Date;Matricule;Nom;Prenom;Classe');
+
+    const header = ['Reference', 'Montant(USD)', 'Devise', 'Mode', 'Type', 'Statut', 'Date', 'Matricule', 'Nom', 'Prenom', 'Classe'];
+    const lines = [header.join(';')];
+    rows.forEach((p) => {
+      lines.push([p.reference, p.montant_usd || 0, p.devise || '', p.mode_paiement || '', p.type_paiement || '', p.statut || '', p.date_paiement || '', p.matricule || '', p.nom || '', p.prenom || '', p.classe || ''].join(';'));
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
+    res.setHeader('Content-Disposition', `attachment; filename="paiements_${date || 'today'}_${Date.now()}.csv"`);
+    res.send('\uFEFF' + meta.join('\n') + '\n' + lines.join('\n'));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+  }
+});
+
 module.exports = router;

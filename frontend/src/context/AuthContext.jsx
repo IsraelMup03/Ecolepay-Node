@@ -15,11 +15,15 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('ecolepay_token');
     if (token) {
       client.get('/auth/me')
-        .then((res) => setUser(res.data.user))
+        .then((res) => {
+          setUser(res.data.user);
+          if (res.data.ecole) setEcole(res.data.ecole);
+        })
         .catch(() => {
           localStorage.removeItem('ecolepay_token');
           localStorage.removeItem('ecolepay_user');
           setUser(null);
+          setEcole(null);
         })
         .finally(() => setLoading(false));
     } else {
