@@ -7,6 +7,13 @@ const { requireAuth, requireAdmin, requirePermission } = require('../middleware/
 const { logActivite, getEcole } = require('../utils/helpers');
 
 const router = express.Router();
+
+// Route publique: exposer des infos basiques de l'école (logo, nom, contact)
+router.get('/ecole-public', async (req, res) => {
+  const ecole = await getEcole();
+  res.json({ ecole });
+});
+
 router.use(requireAuth);
 
 const LOGO_DIR = path.join(__dirname, '../../uploads/logos');

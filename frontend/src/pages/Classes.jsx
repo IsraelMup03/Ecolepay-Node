@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -58,6 +59,37 @@ export default function Classes() {
     }
   }
 
+  const navigate = useNavigate();
+
+  function openViewClass(c) {
+    navigate(`/classes/${c.id}`);
+  }
+
+  async function downloadEleves(classeId, status) {
+    try {
+      const res = await client.get('/rapports/download/eleves.csv', {
+        params: { classe_id: classeId, status },
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=UTF-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `eleves_${status}_${classeId || 'all'}_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur lors du telechargement du CSV.');
+    }
+  }
+
+  function sortClasseEleves(field) {
+    // no-op: kept for compatibility with older modal code
+    return;
+  }
+
   return (
     <div>
       <div className="flex-between mb-16">
@@ -74,7 +106,12 @@ export default function Classes() {
               {!loading && classes.map((c) => (
                 <tr key={c.id}>
                   <td>{c.ordre}</td>
-                  <td><strong>{c.nom}</strong></td>
+                  <td>
+                    <strong>{c.nom}</strong>
+                    <div>
+                      <button className="btn btn-link btn-sm" onClick={() => openViewClass(c)} style={{ marginLeft: 8 }}>Voir</button>
+                    </div>
+                  </td>
                   <td>{fmt(c.frais_scolarite)} {c.devise}</td>
                   <td>{fmt(c.frais_inscription)} {c.devise}</td>
                   <td>{c.effectif_max}</td>
