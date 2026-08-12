@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useAnnee } from '../context/AnneeContext.jsx';
 import { API_URL } from '../api/client.js';
 
 const NAV_GROUPS = [
@@ -17,6 +18,7 @@ const NAV_GROUPS = [
   ]},
   { section: 'Analyse', railIcon: 'ph-bold ph-chart-line', items: [
     { to: '/rapports', icon: 'ph-bold ph-chart-bar', label: 'Rapports', perm: 'rapports' },
+    { to: '/historique', icon: 'ph-bold ph-clock-counter-clockwise', label: 'Historique des années', perm: 'historique' },
   ]},
   { section: 'Administration', railIcon: 'ph-bold ph-shield-check', items: [
     { to: '/utilisateurs', icon: 'ph-bold ph-users-three', label: 'Utilisateurs', admin: true },
@@ -38,6 +40,7 @@ const PAGE_TITLES = {
   '/remboursements': ['Remboursements', 'Demandes et approbations'],
   '/promotion': ['Promotion annuelle', "Passage à l'année suivante"],
   '/rapports': ['Rapports & statistiques', 'Analyse financière détaillée'],
+  '/historique': ['Historique des années', "Tout ce qui s'est passé, année par année"],
   '/utilisateurs': ['Gestion des utilisateurs', 'Rôles et permissions'],
   '/parametres': ['Paramètres', "Configuration de l'école"],
   '/corbeille': ['Corbeille', 'Données récupérables (30 jours)'],
@@ -56,6 +59,7 @@ function findGroupIndex(groups, pathname) {
 
 export default function Layout({ children }) {
   const { user, logout, hasPermission, ecole } = useAuth();
+  const { viewingAnnee, setViewingAnnee } = useAnnee();
   const location = useLocation();
   const [title, subtitle] = PAGE_TITLES[location.pathname] || ['EcolePay', ''];
   const [manualSection, setManualSection] = useState(null);
@@ -111,22 +115,30 @@ export default function Layout({ children }) {
       </aside>
 
       <div className="main-area">
-        <header className="topbar">
-          <div>
-            <h1>{title}</h1>
-            <div className="subtitle">{subtitle}</div>
-          </div>
-          <div className="topbar-user">
-            <div className="info">
-              <div><strong>{user?.prenom} {user?.nom}</strong></div>
-              <div className="role">{user?.role}</div>
+        <div className="topbar-wrap">
+          <header className="topbar">
+            <div>
+              <h1>{title}</h1>
+              <div className="subtitle">{subtitle}</div>
             </div>
-            <div className="avatar">{initials}</div>
-            <button className="logout-btn" onClick={logout} title="Déconnexion">
-              <i className="ph-bold ph-sign-out"></i>
-            </button>
-          </div>
-        </header>
+            <div className="topbar-user">
+              <div className="info">
+                <div><strong>{user?.prenom} {user?.nom}</strong></div>
+                <div className="role">{user?.role}</div>
+              </div>
+              <div className="avatar">{initials}</div>
+              <button className="logout-btn" onClick={logout} title="Déconnexion">
+                <i className="ph-bold ph-sign-out"></i>
+              </button>
+            </div>
+          </header>
+          {viewingAnnee && (
+            <div className="historical-banner">
+              <span><i className="ph-bold ph-clock-counter-clockwise"></i>Vous consultez l'année <strong>{viewingAnnee}</strong> — lecture seule</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setViewingAnnee(null)}>Retour à l'année en cours</button>
+            </div>
+          )}
+        </div>
         <main className="content">{children}</main>
       </div>
     </div>

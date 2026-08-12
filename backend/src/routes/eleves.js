@@ -6,9 +6,32 @@ const { genererMatricule, logActivite, envoyerCorbeille, getParam } = require('.
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/eleves?classe_id=&q=&statut=
+// GET /api/eleves?classe_id=&q=&statut=&annee=  (annee: consulter une annee archivee)
 router.get('/', async (req, res) => {
-  const { classe_id, q, statut = 'actif' } = req.query;
+  const { classe_id, q, statut = 'actif', annee } = req.query;
+
+  if (annee) {
+    const [[{ cnt }]] = await db.query('SELECT COUNT(*) as cnt FROM archives_annuelles WHERE annee_scolaire=?', [annee]);
+    if (cnt > 0) {
+      const whereA = ['a.annee_scolaire=?'];
+      const paramsA = [annee];
+      if (classe_id) { whereA.push('a.classe_id=?'); paramsA.push(classe_id); }
+      if (q) { whereA.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); paramsA.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+      const [rows] = await db.query(
+        `SELECT e.id, e.matricule, e.nom, e.prenom, e.genre, a.classe_id, c.nom as classe_nom,
+                a.frais_scolarite_total, a.total_paye, a.statut_paiement
+         FROM archives_annuelles a
+         JOIN eleves e ON e.id=a.eleve_id
+         LEFT JOIN classes c ON c.id=a.classe_id
+         WHERE ${whereA.join(' AND ')}
+         ORDER BY e.nom ASC, e.prenom ASC`,
+        paramsA
+      );
+      return res.json(rows.map((r) => ({ ...r, archive: true })));
+    }
+    // Annee non encore archivee (= annee courante) -> la requete live ci-dessous reflete deja cette annee.
+  }
+
   const where = ['e.statut != "transfere"'];
   const params = [];
   if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
@@ -18,7 +41,7 @@ router.get('/', async (req, res) => {
 
   const [rows] = await db.query(
     `SELECT e.*, c.nom as classe_nom,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite'),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      ${whereStr} ORDER BY e.nom ASC, e.prenom ASC`,
     params
@@ -33,7 +56,7 @@ router.get('/search', async (req, res) => {
   const [rows] = await db.query(
     `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe,
             e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye
+            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      WHERE e.statut='actif' AND (e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR CONCAT(e.prenom,' ',e.nom) LIKE ?)
      ORDER BY e.nom ASC, e.prenom ASC LIMIT 10`,
@@ -61,7 +84,7 @@ router.get('/by-classe/:classeId', async (req, res) => {
 
   const [rows] = await db.query(
     `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye,
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as dernier_paiement_date,
             (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
      FROM eleves e WHERE e.classe_id=? AND e.statut='actif' ORDER BY e.nom ASC, e.prenom ASC`,
@@ -88,7 +111,7 @@ router.get('/export.csv', async (req, res) => {
   const [rows] = await db.query(
     `SELECT e.matricule, e.prenom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut,
             e.nom_parent, e.telephone_parent, e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye,
+            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             e.date_inscription, e.annee_scolaire
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      ${whereStr} ORDER BY e.nom ASC`,
@@ -111,9 +134,10 @@ router.get('/export.csv', async (req, res) => {
   res.send('\uFEFF' + lines.join('\n'));
 });
 
-// GET /api/eleves/:id (fiche detaillee + paiements + calculs)
+// GET /api/eleves/:id (fiche detaillee + paiements + calculs) - ?annee=X pour consulter une annee passee
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
+  const { annee } = req.query;
   const [[eleve]] = await db.query(
     `SELECT e.*, c.nom as classe_nom, c.frais_scolarite as classe_frais, c.frais_inscription as classe_frais_inscription,
             cs.nom as classe_sup_nom, ci.nom as classe_inf_nom
@@ -125,22 +149,40 @@ router.get('/:id', async (req, res) => {
   );
   if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
 
-  const [paiements] = await db.query(
+  const [tousPaiements] = await db.query(
     `SELECT p.*, u.prenom as cpt_prenom, u.nom as cpt_nom
      FROM paiements p LEFT JOIN utilisateurs u ON u.id=p.comptable_id
      WHERE p.eleve_id=? ORDER BY p.date_paiement DESC`,
     [id]
   );
 
+  const modeHistorique = !!(annee && annee !== eleve.annee_scolaire);
+  // Que ce soit en consultation live (annee active de l'eleve) ou en mode historique
+  // (annee passee choisie), on n'affiche et on ne somme que les paiements de cette annee-la :
+  // chaque annee scolaire repart de zero, l'historique complet reste accessible via Historique.
+  const anneeCible = modeHistorique ? annee : eleve.annee_scolaire;
+  const paiements = tousPaiements.filter((p) => p.annee_scolaire === anneeCible);
+
   const totalPayeScolarite = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'scolarite').reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
   const totalPayeInscription = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'inscription').reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
   const totalRembourse = paiements.filter((p) => p.statut === 'rembourse').reduce((s, p) => s + parseFloat(p.montant), 0);
-  const resteScolarite = Math.max(0, eleve.frais_scolarite_total - totalPayeScolarite);
-  const resteInscription = Math.max(0, eleve.frais_inscription_total - totalPayeInscription);
-  const pctScolarite = eleve.frais_scolarite_total > 0 ? Math.min(100, Math.round((totalPayeScolarite / eleve.frais_scolarite_total) * 100)) : 0;
+
+  let fraisScolariteRef = eleve.frais_scolarite_total;
+  let fraisInscriptionRef = eleve.frais_inscription_total;
+  if (modeHistorique) {
+    const [[archive]] = await db.query(
+      `SELECT frais_scolarite_total FROM archives_annuelles WHERE eleve_id=? AND annee_scolaire=?`,
+      [id, annee]
+    );
+    if (archive) fraisScolariteRef = archive.frais_scolarite_total;
+  }
+
+  const resteScolarite = Math.max(0, fraisScolariteRef - totalPayeScolarite);
+  const resteInscription = Math.max(0, fraisInscriptionRef - totalPayeInscription);
+  const pctScolarite = fraisScolariteRef > 0 ? Math.min(100, Math.round((totalPayeScolarite / fraisScolariteRef) * 100)) : 0;
 
   res.json({
-    eleve, paiements,
+    eleve, paiements, modeHistorique,
     totaux: { totalPayeScolarite, totalPayeInscription, totalRembourse, resteScolarite, resteInscription, pctScolarite },
   });
 });
@@ -150,9 +192,9 @@ router.get('/:id/caisse-info', async (req, res) => {
   const { id } = req.params;
   const [[eleve]] = await db.query(
     `SELECT e.*, c.nom as classe_nom, c.frais_scolarite, c.frais_inscription,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite'),0) as total_paye_scolarite,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='inscription'),0) as total_paye_inscription,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye_global
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_scolarite,
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='inscription' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_inscription,
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_global
      FROM eleves e JOIN classes c ON c.id=e.classe_id WHERE e.id=?`,
     [id]
   );
@@ -163,8 +205,8 @@ router.get('/:id/caisse-info', async (req, res) => {
   const [historique] = await db.query(
     `SELECT p.*, u.prenom as c_prenom, u.nom as c_nom
      FROM paiements p LEFT JOIN utilisateurs u ON u.id=p.comptable_id
-     WHERE p.eleve_id=? ORDER BY p.date_paiement DESC LIMIT 10`,
-    [id]
+     WHERE p.eleve_id=? AND p.annee_scolaire=? ORDER BY p.date_paiement DESC LIMIT 10`,
+    [id, eleve.annee_scolaire]
   );
   res.json({ eleve, historique });
 });

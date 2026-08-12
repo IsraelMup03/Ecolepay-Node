@@ -18,6 +18,7 @@ const PERMISSIONS_DISPONIBLES = {
   promotion: "Lancer la promotion annuelle",
   parametres: 'Modifier les parametres',
   corbeille: 'Acceder a la corbeille',
+  historique: "Voir l'historique des annees",
 };
 
 // GET /api/utilisateurs

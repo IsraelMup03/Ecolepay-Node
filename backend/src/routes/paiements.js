@@ -23,17 +23,19 @@ router.get('/:id/verify', async (req, res) => {
 
 router.use(requireAuth);
 
-// GET /api/paiements  (historique paginé avec filtres)
+// GET /api/paiements  (historique paginé avec filtres ; par defaut limite a l'annee scolaire en cours, ?annee= pour consulter une autre annee)
 router.get('/', async (req, res) => {
-  const { p = 1, q, classe_id, debut, fin, type, statut = 'valide' } = req.query;
+  const { p = 1, q, classe_id, debut, fin, type, statut = 'valide', annee } = req.query;
   const page = Math.max(1, parseInt(p, 10));
   const perPage = 25;
   const offset = (page - 1) * perPage;
+  const anneeFiltre = annee || await getParam('annee_scolaire_courante');
 
   const where = ['1=1'];
   const params = [];
   if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR p.reference LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
+  if (anneeFiltre) { where.push('p.annee_scolaire=?'); params.push(anneeFiltre); }
   if (debut) { where.push('DATE(p.date_paiement)>=?'); params.push(debut); }
   if (fin) { where.push('DATE(p.date_paiement)<=?'); params.push(fin); }
   if (type) { where.push('p.type_paiement=?'); params.push(type); }

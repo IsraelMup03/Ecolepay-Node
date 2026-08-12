@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
+import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 function fmt(n, devise = 'USD') {
   return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
@@ -8,6 +10,7 @@ function fmt(n, devise = 'USD') {
 
 export default function Caisse() {
   const navigate = useNavigate();
+  const { viewingAnnee } = useAnnee();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -67,6 +70,8 @@ export default function Caisse() {
       setLoading(false);
     }
   }
+
+  if (viewingAnnee) return <HistoricalBlock />;
 
   return (
     <div className="grid-2">

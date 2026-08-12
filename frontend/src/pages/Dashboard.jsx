@@ -2,18 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n, devise = 'USD') {
   return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
 }
 
 export default function Dashboard() {
+  const { viewingAnnee } = useAnnee();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    client.get('/dashboard').then((res) => setData(res.data)).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    client.get('/dashboard', { params: viewingAnnee ? { annee: viewingAnnee } : {} }).then((res) => setData(res.data)).finally(() => setLoading(false));
+  }, [viewingAnnee]);
 
   if (loading) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement du tableau de bord...</p></div>;
   if (!data) return <div className="alert alert-danger">Impossible de charger les données.</div>;
@@ -47,14 +50,16 @@ export default function Dashboard() {
             <div className="sub">Sur l'année {annee}</div>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon orange"><i className="ph-bold ph-calendar-check"></i></div>
-          <div className="stat-info">
-            <div className="label">Aujourd'hui</div>
-            <div className="value">{fmt(stats.paiementsAujourdhui, devise)}</div>
-            <div className="sub">Ce mois : {fmt(stats.paiementsMois, devise)}</div>
+        {!data.modeHistorique && (
+          <div className="stat-card">
+            <div className="stat-icon orange"><i className="ph-bold ph-calendar-check"></i></div>
+            <div className="stat-info">
+              <div className="label">Aujourd'hui</div>
+              <div className="value">{fmt(stats.paiementsAujourdhui, devise)}</div>
+              <div className="sub">Ce mois : {fmt(stats.paiementsMois, devise)}</div>
+            </div>
           </div>
-        </div>
+        )}
         <div className="stat-card">
           <div className="stat-icon blue"><i className="ph-bold ph-percent"></i></div>
           <div className="stat-info">

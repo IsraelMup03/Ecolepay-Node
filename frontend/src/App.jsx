@@ -17,6 +17,7 @@ import RecuVerify from './pages/RecuVerify.jsx';
 import Remboursements from './pages/Remboursements.jsx';
 import Promotion from './pages/Promotion.jsx';
 import Rapports from './pages/Rapports.jsx';
+import Historique from './pages/Historique.jsx';
 import Utilisateurs from './pages/Utilisateurs.jsx';
 import Parametres from './pages/Parametres.jsx';
 import Corbeille from './pages/Corbeille.jsx';
@@ -64,6 +65,7 @@ export default function App() {
       <Route path="/remboursements" element={<Page perm="remboursements"><Remboursements /></Page>} />
       <Route path="/promotion" element={<Page perm="promotion"><Promotion /></Page>} />
       <Route path="/rapports" element={<Page perm="rapports"><Rapports /></Page>} />
+      <Route path="/historique" element={<Page perm="historique"><Historique /></Page>} />
       <Route path="/utilisateurs" element={<Page admin><Utilisateurs /></Page>} />
       <Route path="/parametres" element={<Page perm="parametres"><Parametres /></Page>} />
       <Route path="/corbeille" element={<Page admin><Corbeille /></Page>} />

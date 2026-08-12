@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
+import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 const TABLE_LABELS = { eleves: 'Élève', classes: 'Classe', utilisateurs: 'Utilisateur' };
 
 export default function Corbeille() {
+  const { viewingAnnee } = useAnnee();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,6 +39,8 @@ export default function Corbeille() {
       return '—';
     } catch (e) { return '—'; }
   }
+
+  if (viewingAnnee) return <HistoricalBlock />;
 
   return (
     <div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n, devise = 'USD') {
   return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
@@ -9,17 +10,18 @@ function fmt(n, devise = 'USD') {
 export default function EleveDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { viewingAnnee } = useAnnee();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
   async function load() {
     setLoading(true);
-    const res = await client.get(`/eleves/${id}`);
+    const res = await client.get(`/eleves/${id}`, { params: viewingAnnee ? { annee: viewingAnnee } : {} });
     setData(res.data);
     setLoading(false);
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id, viewingAnnee]);
 
   async function retrograder() {
     if (!window.confirm('Confirmer la rétrogradation de cet élève vers la classe inférieure ?')) return;
@@ -71,11 +73,13 @@ export default function EleveDetail() {
               </tbody>
             </table>
 
-            <div className="flex gap-8" style={{ marginTop: 18 }}>
-              <button className="btn btn-outline" onClick={() => navigate('/caisse')}><i className="ph ph-money"></i> Enregistrer un paiement</button>
-              {eleve.classe_inf_nom && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
-              <button className="btn btn-danger" onClick={archiver}><i className="ph ph-archive"></i> Archiver</button>
-            </div>
+            {!viewingAnnee && (
+              <div className="flex gap-8" style={{ marginTop: 18 }}>
+                <button className="btn btn-outline" onClick={() => navigate('/caisse')}><i className="ph ph-money"></i> Enregistrer un paiement</button>
+                {eleve.classe_inf_nom && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
+                <button className="btn btn-danger" onClick={archiver}><i className="ph ph-archive"></i> Archiver</button>
+              </div>
+            )}
           </div>
         </div>
 

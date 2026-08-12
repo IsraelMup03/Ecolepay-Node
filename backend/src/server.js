@@ -16,6 +16,7 @@ const corbeilleRoutes = require('./routes/corbeille');
 const logsRoutes = require('./routes/logs');
 const profilRoutes = require('./routes/profil');
 const rapportsRoutes = require('./routes/rapports');
+const historiqueRoutes = require('./routes/historique');
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/corbeille', corbeilleRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/profil', profilRoutes);
 app.use('/api/rapports', rapportsRoutes);
+app.use('/api/historique', historiqueRoutes);
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {

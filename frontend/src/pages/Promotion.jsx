@@ -1,10 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
+import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Calcule automatiquement l'année scolaire suivante à partir de l'année en cours (ex: "2024-2025" -> "2025-2026")
+function suggererAnneeSuivante(anneeCourante) {
+  const nums = (anneeCourante || '').match(/\d{4}/g);
+  if (!nums || !nums.length) return '';
+  if (nums.length === 1) { const y = parseInt(nums[0], 10); return `${y + 1}-${y + 2}`; }
+  return `${parseInt(nums[0], 10) + 1}-${parseInt(nums[1], 10) + 1}`;
+}
+
 export default function Promotion() {
+  const { viewingAnnee } = useAnnee();
   const [preview, setPreview] = useState([]);
+  const [anneeCourante, setAnneeCourante] = useState('');
   const [loading, setLoading] = useState(true);
   const [nouvelleAnnee, setNouvelleAnnee] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -12,8 +24,14 @@ export default function Promotion() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    client.get('/promotion/preview').then((res) => setPreview(res.data)).finally(() => setLoading(false));
+    client.get('/promotion/preview').then((res) => {
+      setPreview(res.data.eleves);
+      setAnneeCourante(res.data.anneeCourante);
+      setNouvelleAnnee(suggererAnneeSuivante(res.data.anneeCourante));
+    }).finally(() => setLoading(false));
   }, []);
+
+  if (viewingAnnee) return <HistoricalBlock />;
 
   const nbDiplomes = preview.filter((e) => !e.classe_suivante).length;
   const nbPromouvables = preview.filter((e) => e.classe_suivante).length;
@@ -75,7 +93,8 @@ export default function Promotion() {
           <div className="form-grid form-grid-2" style={{ alignItems: 'end' }}>
             <div className="form-group">
               <label>Nouvelle année scolaire</label>
-              <input placeholder="Ex: 2027-2028" value={nouvelleAnnee} onChange={(e) => setNouvelleAnnee(e.target.value)} />
+              <input value={nouvelleAnnee} onChange={(e) => setNouvelleAnnee(e.target.value)} />
+              <small>Calculée automatiquement à partir de l'année en cours ({anneeCourante}) — modifiable si besoin.</small>
             </div>
             <button className="btn btn-accent" onClick={executer} disabled={confirming}>
               {confirming ? 'Traitement en cours...' : <><i className="ph ph-rocket-launch"></i> Exécuter la promotion</>}

@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client, { API_URL } from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n) {
   return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const STATUT_PAIEMENT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
+const STATUT_PAIEMENT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
+
 export default function Eleves() {
+  const { viewingAnnee } = useAnnee();
   const [eleves, setEleves] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -20,7 +25,8 @@ export default function Eleves() {
 
   async function loadEleves() {
     setLoading(true);
-    const res = await client.get('/eleves', { params: { q, classe_id: classeId, statut } });
+    const params = viewingAnnee ? { q, classe_id: classeId, annee: viewingAnnee } : { q, classe_id: classeId, statut };
+    const res = await client.get('/eleves', { params });
     setEleves(res.data);
     setLoading(false);
   }
@@ -30,7 +36,7 @@ export default function Eleves() {
     const t = setTimeout(loadEleves, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line
-  }, [q, classeId, statut]);
+  }, [q, classeId, statut, viewingAnnee]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -74,16 +80,22 @@ export default function Eleves() {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
           </select>
         </div>
-        <div className="form-group">
-          <select value={statut} onChange={(e) => setStatut(e.target.value)}>
-            <option value="actif">Actifs</option>
-            <option value="redoublant">Redoublants</option>
-            <option value="diplome">Diplômés</option>
-            <option value="suspendu">Suspendus</option>
-          </select>
-        </div>
-        <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-download-simple"></i> Exporter CSV</button>
-        <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Inscrire un élève</button>
+        {!viewingAnnee && (
+          <div className="form-group">
+            <select value={statut} onChange={(e) => setStatut(e.target.value)}>
+              <option value="actif">Actifs</option>
+              <option value="redoublant">Redoublants</option>
+              <option value="diplome">Diplômés</option>
+              <option value="suspendu">Suspendus</option>
+            </select>
+          </div>
+        )}
+        {!viewingAnnee && (
+          <>
+            <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-download-simple"></i> Exporter CSV</button>
+            <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Inscrire un élève</button>
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -105,7 +117,11 @@ export default function Eleves() {
                       <div><strong>{e.prenom} {e.nom}</strong></div>
                     </td>
                     <td>{e.classe_nom}</td>
-                    <td><span className={`badge ${e.statut === 'actif' ? 'badge-success' : e.statut === 'redoublant' ? 'badge-warning' : 'badge-default'}`}>{e.statut}</span></td>
+                    <td>
+                      {e.archive
+                        ? <span className={`badge ${STATUT_PAIEMENT_BADGE[e.statut_paiement] || 'badge-default'}`}>{STATUT_PAIEMENT_LABELS[e.statut_paiement] || e.statut_paiement}</span>
+                        : <span className={`badge ${e.statut === 'actif' ? 'badge-success' : e.statut === 'redoublant' ? 'badge-warning' : 'badge-default'}`}>{e.statut}</span>}
+                    </td>
                     <td>{fmt(e.total_paye)}</td>
                     <td className={reste > 0 ? '' : 'text-muted'}><strong style={{ color: reste > 0 ? 'var(--danger)' : 'var(--success)' }}>{fmt(reste)}</strong></td>
                     <td><Link to={`/eleves/${e.id}`} className="btn btn-outline btn-sm"><i className="ph ph-eye"></i> Fiche</Link></td>

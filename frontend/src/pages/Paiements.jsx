@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n, devise = 'USD') {
   return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
 }
 
 export default function Paiements() {
+  const { viewingAnnee } = useAnnee();
   const [rows, setRows] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -19,14 +21,17 @@ export default function Paiements() {
 
   async function load() {
     setLoading(true);
-    const res = await client.get('/paiements', { params: { p: page, q, classe_id: classeId, debut, fin, type } });
+    const params = { p: page, q, classe_id: classeId, type };
+    if (viewingAnnee) params.annee = viewingAnnee;
+    else { params.debut = debut; params.fin = fin; }
+    const res = await client.get('/paiements', { params });
     setRows(res.data.paiements);
     setMeta(res.data);
     setLoading(false);
   }
 
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
-  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, classeId, debut, fin, type, page]);
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, classeId, debut, fin, type, page, viewingAnnee]);
 
   return (
     <div>
@@ -49,8 +54,12 @@ export default function Paiements() {
             <option value="autre">Autre</option>
           </select>
         </div>
-        <div className="form-group"><input type="date" value={debut} onChange={(e) => { setDebut(e.target.value); setPage(1); }} /></div>
-        <div className="form-group"><input type="date" value={fin} onChange={(e) => { setFin(e.target.value); setPage(1); }} /></div>
+        {!viewingAnnee && (
+          <>
+            <div className="form-group"><input type="date" value={debut} onChange={(e) => { setDebut(e.target.value); setPage(1); }} /></div>
+            <div className="form-group"><input type="date" value={fin} onChange={(e) => { setFin(e.target.value); setPage(1); }} /></div>
+          </>
+        )}
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>

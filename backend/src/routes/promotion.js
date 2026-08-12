@@ -12,14 +12,15 @@ router.get('/preview', requirePermission('promotion'), async (req, res) => {
     `SELECT e.id, e.nom, e.prenom, e.statut, e.frais_scolarite_total,
             c.nom as classe_actuelle, cs.nom as classe_suivante, cs.id as classe_suivante_id,
             cs.frais_scolarite as nouveaux_frais, cs.frais_inscription as nouvelle_inscription,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide'),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e
      JOIN classes c ON c.id=e.classe_id
      LEFT JOIN classes cs ON cs.id=c.classe_superieure_id
      WHERE e.statut='actif'
      ORDER BY c.ordre ASC, e.nom ASC`
   );
-  res.json(rows);
+  const anneeCourante = await getParam('annee_scolaire_courante');
+  res.json({ eleves: rows, anneeCourante });
 });
 
 // POST /api/promotion/executer  { nouvelle_annee }
@@ -41,12 +42,22 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
     );
     for (const ea of elevesActifs) {
       const statutPay = ea.total_paye >= ea.frais_scolarite_total ? 'solde' : (ea.total_paye > 0 ? 'partiel' : 'non_paye');
-      await conn.query(
-        `INSERT INTO archives_annuelles (annee_scolaire, eleve_id, classe_id, frais_scolarite_total, total_paye, statut_paiement)
-         VALUES (?,?,?,?,?,?)
-         ON DUPLICATE KEY UPDATE total_paye=VALUES(total_paye), statut_paiement=VALUES(statut_paiement)`,
-        [annee, ea.id, ea.classe_id, ea.frais_scolarite_total, ea.total_paye, statutPay]
+      const [[existante]] = await conn.query(
+        'SELECT id FROM archives_annuelles WHERE annee_scolaire=? AND eleve_id=?',
+        [annee, ea.id]
       );
+      if (existante) {
+        await conn.query(
+          'UPDATE archives_annuelles SET classe_id=?, frais_scolarite_total=?, total_paye=?, statut_paiement=? WHERE id=?',
+          [ea.classe_id, ea.frais_scolarite_total, ea.total_paye, statutPay, existante.id]
+        );
+      } else {
+        await conn.query(
+          `INSERT INTO archives_annuelles (annee_scolaire, eleve_id, classe_id, frais_scolarite_total, total_paye, statut_paiement)
+           VALUES (?,?,?,?,?,?)`,
+          [annee, ea.id, ea.classe_id, ea.frais_scolarite_total, ea.total_paye, statutPay]
+        );
+      }
     }
 
     // 2. Promouvoir les eleves actifs ayant une classe superieure
@@ -68,10 +79,8 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
 
     // 3. Eleves en classe terminale (pas de classe superieure) -> diplomes
     const [diplomesResult] = await conn.query(
-      `UPDATE eleves e
-       JOIN classes c ON c.id=e.classe_id
-       SET e.statut='diplome', e.annee_scolaire=?
-       WHERE e.statut='actif' AND c.classe_superieure_id IS NULL`,
+      `UPDATE eleves SET statut='diplome', annee_scolaire=?
+       WHERE statut='actif' AND classe_id IN (SELECT id FROM classes WHERE classe_superieure_id IS NULL)`,
       [nouvelle_annee]
     );
     const nbDiplomes = diplomesResult.affectedRows;

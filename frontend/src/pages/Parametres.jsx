@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useAnnee } from '../context/AnneeContext.jsx';
+import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 export default function Parametres() {
   const { user, setEcole: setAuthEcole } = useAuth();
+  const { viewingAnnee } = useAnnee();
   const [ecole, setEcole] = useState(null);
   const [params, setParams] = useState({});
   const [ecoleForm, setEcoleForm] = useState(null);
@@ -71,6 +74,7 @@ export default function Parametres() {
     }
   }
 
+  if (viewingAnnee) return <HistoricalBlock />;
   if (!ecole) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement...</p></div>;
 
   return (

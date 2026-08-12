@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
+import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 const empty = { nom: '', prenom: '', email: '', role: 'comptable', telephone: '', permissions: [] };
 
 export default function Utilisateurs() {
+  const { viewingAnnee } = useAnnee();
   const [users, setUsers] = useState([]);
   const [permsDispo, setPermsDispo] = useState({});
   const [defaultPassword, setDefaultPassword] = useState('');
@@ -75,6 +78,8 @@ export default function Utilisateurs() {
       alert(err.response?.data?.error || 'Erreur.');
     }
   }
+
+  if (viewingAnnee) return <HistoricalBlock />;
 
   return (
     <div>

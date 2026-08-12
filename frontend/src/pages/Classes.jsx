@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 const empty = { nom: '', frais_scolarite: '', frais_inscription: '', classe_superieure_id: '', classe_inferieure_id: '', effectif_max: 50, ordre: 0 };
 
 export default function Classes() {
+  const { viewingAnnee } = useAnnee();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -94,7 +96,7 @@ export default function Classes() {
     <div>
       <div className="flex-between mb-16">
         <div className="text-muted">{classes.filter((c) => c.actif).length} classe(s) active(s)</div>
-        <button className="btn btn-accent" onClick={openNew}><i className="ph ph-plus"></i> Nouvelle classe</button>
+        {!viewingAnnee && <button className="btn btn-accent" onClick={openNew}><i className="ph ph-plus"></i> Nouvelle classe</button>}
       </div>
 
       <div className="card">
@@ -118,8 +120,8 @@ export default function Classes() {
                   <td className="text-muted">{classes.find((x) => x.id === c.classe_superieure_id)?.nom || '—'}</td>
                   <td><span className={`badge ${c.actif ? 'badge-success' : 'badge-default'}`}>{c.actif ? 'Active' : 'Archivée'}</span></td>
                   <td className="flex gap-8">
-                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(c)}><i className="ph ph-pencil-simple"></i></button>
-                    {c.actif ? <button className="btn btn-danger btn-sm" onClick={() => archiver(c)}><i className="ph ph-archive"></i></button> : null}
+                    {!viewingAnnee && <button className="btn btn-outline btn-sm" onClick={() => openEdit(c)}><i className="ph ph-pencil-simple"></i></button>}
+                    {!viewingAnnee && c.actif ? <button className="btn btn-danger btn-sm" onClick={() => archiver(c)}><i className="ph ph-archive"></i></button> : null}
                   </td>
                 </tr>
               ))}

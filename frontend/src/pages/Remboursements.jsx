@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useAnnee } from '../context/AnneeContext.jsx';
+import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 function fmt(n, devise = 'USD') {
   return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
@@ -8,6 +10,7 @@ function fmt(n, devise = 'USD') {
 
 export default function Remboursements() {
   const { user } = useAuth();
+  const { viewingAnnee } = useAnnee();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -60,6 +63,8 @@ export default function Remboursements() {
     await client.post(`/remboursements/${id}/rejeter`);
     load();
   }
+
+  if (viewingAnnee) return <HistoricalBlock />;
 
   return (
     <div>
