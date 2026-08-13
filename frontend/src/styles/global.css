@@ -147,6 +147,16 @@ a { color: inherit; }
 .global-search-item-title { font-size: 13px; font-weight: 600; color: var(--text); }
 .global-search-item-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
 
+.devise-toggle {
+  display: flex; align-items: center; flex-shrink: 0; padding: 3px; gap: 2px;
+  background: var(--bg); border: 1px solid var(--border-light); border-radius: 999px; cursor: pointer;
+}
+.devise-toggle span {
+  padding: 5px 12px; font-size: 12px; font-weight: 700; border-radius: 999px; color: var(--text-muted);
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.devise-toggle span.active { background: var(--primary); color: #fff; }
+
 .topbar-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .topbar-user .avatar {
   width: 36px; height: 36px; border-radius: 50%;

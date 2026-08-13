@@ -2,19 +2,18 @@ import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
-
-function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 export default function Remboursements() {
   const { user } = useAuth();
   const { viewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [refPaiement, setRefPaiement] = useState('');
   const [paiementTrouve, setPaiementTrouve] = useState(null);
+  const [montant, setMontant] = useState('');
   const [motif, setMotif] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -30,10 +29,11 @@ export default function Remboursements() {
   async function chercherPaiement() {
     setError('');
     setPaiementTrouve(null);
+    setMontant('');
     if (!refPaiement.trim()) return;
     const res = await client.get('/paiements/by-reference', { params: { ref: refPaiement.trim() } });
     if (!res.data) setError('Aucun paiement valide trouvé pour cette référence.');
-    else setPaiementTrouve(res.data);
+    else { setPaiementTrouve(res.data); setMontant(res.data.montant); }
   }
 
   async function handleSubmit(e) {
@@ -41,9 +41,9 @@ export default function Remboursements() {
     if (!paiementTrouve) { setError('Recherchez un paiement valide d\'abord.'); return; }
     setSaving(true); setError('');
     try {
-      await client.post('/remboursements', { paiement_id: paiementTrouve.id, motif });
+      await client.post('/remboursements', { paiement_id: paiementTrouve.id, motif, montant });
       setShowModal(false);
-      setRefPaiement(''); setPaiementTrouve(null); setMotif('');
+      setRefPaiement(''); setPaiementTrouve(null); setMotif(''); setMontant('');
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur.');
@@ -52,10 +52,14 @@ export default function Remboursements() {
     }
   }
 
-  async function approuver(id) {
-    if (!window.confirm('Approuver ce remboursement ? Le paiement associé sera marqué comme remboursé.')) return;
-    await client.post(`/remboursements/${id}/approuver`);
-    load();
+  async function approuver(id, r) {
+    if (!window.confirm(`Approuver ce remboursement de ${r.montant} ${r.devise} ? Le montant sera déduit du paiement ${r.pay_ref}.`)) return;
+    try {
+      await client.post(`/remboursements/${id}/approuver`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
   }
   async function rejeter(id) {
     if (!window.confirm('Rejeter cette demande de remboursement ?')) return;
@@ -82,7 +86,7 @@ export default function Remboursements() {
                   <td><code>{r.reference_remboursement}</code></td>
                   <td>{r.prenom} {r.nom} <span className="text-muted">({r.matricule})</span></td>
                   <td><code>{r.pay_ref}</code></td>
-                  <td><strong>{fmt(r.montant, r.devise)}</strong></td>
+                  <td><strong>{format(r.montant_usd)}</strong></td>
                   <td className="text-muted">{r.motif}</td>
                   <td><span className={`badge ${r.statut === 'approuve' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{r.statut}</span></td>
                   <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
@@ -90,7 +94,7 @@ export default function Remboursements() {
                     <td className="flex gap-8">
                       {r.statut === 'en_attente' && (
                         <>
-                          <button className="btn btn-success btn-sm" onClick={() => approuver(r.id)}><i className="ph ph-check"></i></button>
+                          <button className="btn btn-success btn-sm" onClick={() => approuver(r.id, r)}><i className="ph ph-check"></i></button>
                           <button className="btn btn-danger btn-sm" onClick={() => rejeter(r.id)}><i className="ph ph-x"></i></button>
                         </>
                       )}
@@ -118,9 +122,24 @@ export default function Remboursements() {
                   </div>
                 </div>
                 {paiementTrouve && (
-                  <div className="alert alert-info">
-                    {paiementTrouve.prenom} {paiementTrouve.nom} ({paiementTrouve.matricule}) — {fmt(paiementTrouve.montant, paiementTrouve.devise)}
-                  </div>
+                  <>
+                    <div className="alert alert-info">
+                      {paiementTrouve.prenom} {paiementTrouve.nom} ({paiementTrouve.matricule}) — payé {format(paiementTrouve.montant_usd)}
+                    </div>
+                    <div className="form-group">
+                      <label>Montant à rembourser *</label>
+                      <div className="flex gap-8" style={{ alignItems: 'center' }}>
+                        <input
+                          type="number" step="0.01" min="0.01" max={paiementTrouve.montant}
+                          value={montant} onChange={(e) => setMontant(e.target.value)} required
+                        />
+                        <span className="text-muted">{paiementTrouve.devise}</span>
+                      </div>
+                      <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                        Maximum {paiementTrouve.montant} {paiementTrouve.devise}. Un montant inférieur au total payé ne rembourse que la différence — le paiement reste valide pour le reste.
+                      </p>
+                    </div>
+                  </>
                 )}
                 <div className="form-group">
                   <label>Motif du remboursement *</label>

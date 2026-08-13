@@ -101,6 +101,15 @@ router.put('/:id', requirePermission('classes'), async (req, res) => {
       id,
     ]
   );
+  // Repercute le nouveau montant sur les eleves actuellement actifs dans cette classe
+  // (les eleves.frais_scolarite_total/frais_inscription_total sont une copie prise a
+  // l'inscription/promotion, pas une reference live vers la classe). On ne touche pas
+  // aux annees archivees : leur situation financiere passee doit rester figee.
+  await db.query(
+    `UPDATE eleves SET frais_scolarite_total=?, frais_inscription_total=? WHERE classe_id=? AND statut='actif'`,
+    [parseFloat(frais_scolarite) || 0, parseFloat(frais_inscription) || 0, id]
+  );
+
   await logActivite(req.user.id, 'Classe modifiee', `ID:${id}`, req.ip);
   const [[updated]] = await db.query('SELECT * FROM classes WHERE id=?', [id]);
   res.json(updated);

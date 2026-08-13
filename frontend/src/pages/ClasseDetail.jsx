@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client.js';
-
-function fmt(n) {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 export default function ClasseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { format, devise } = useDevise();
   const [classe, setClasse] = useState(null);
   const [stats, setStats] = useState(null);
   const [eleves, setEleves] = useState([]);
@@ -48,21 +46,21 @@ export default function ClasseDetail() {
 
   async function downloadEleves(status) {
     try {
-      const res = await client.get('/rapports/download/eleves.csv', {
-        params: { classe_id: id, status },
+      const res = await client.get('/rapports/download/eleves.xlsx', {
+        params: { classe_id: id, status, devise },
         responseType: 'blob',
       });
-      const blob = new Blob([res.data], { type: 'text/csv;charset=UTF-8' });
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `classe_${id}_${status}_${Date.now()}.csv`;
+      a.download = `classe_${id}_${status}_${Date.now()}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err.response?.data?.error || 'Erreur lors du téléchargement du CSV.');
+      alert(err.response?.data?.error || 'Erreur lors du téléchargement du rapport.');
     }
   }
 
@@ -127,9 +125,9 @@ export default function ClasseDetail() {
         <div className="card">
           <div className="card-header"><h3>Résultats</h3></div>
           <div className="card-body">
-            <div className="stat-card"><div className="stat-info"><div className="label">Total attendu</div><div className="value">{fmt(stats?.total_attendu)}</div></div></div>
-            <div className="stat-card"><div className="stat-info"><div className="label">Total payé</div><div className="value">{fmt(stats?.total_paye)}</div></div></div>
-            <div className="stat-card"><div className="stat-info"><div className="label">Reste</div><div className="value">{fmt((stats?.total_attendu || 0) - (stats?.total_paye || 0))}</div></div></div>
+            <div className="stat-card"><div className="stat-info"><div className="label">Total attendu</div><div className="value">{format(stats?.total_attendu)}</div></div></div>
+            <div className="stat-card"><div className="stat-info"><div className="label">Total payé</div><div className="value">{format(stats?.total_paye)}</div></div></div>
+            <div className="stat-card"><div className="stat-info"><div className="label">Reste</div><div className="value">{format((stats?.total_attendu || 0) - (stats?.total_paye || 0))}</div></div></div>
           </div>
         </div>
       </div>
@@ -166,8 +164,8 @@ export default function ClasseDetail() {
                     <td>{e.matricule}</td>
                     <td>{e.nom}</td>
                     <td>{e.prenom}</td>
-                    <td>{fmt(e.total_paye)}</td>
-                    <td>{fmt(Math.max(0, (e.frais_scolarite_total || 0) - (e.total_paye || 0)))}</td>
+                    <td>{format(e.total_paye)}</td>
+                    <td>{format(Math.max(0, (e.frais_scolarite_total || 0) - (e.total_paye || 0)))}</td>
                     <td>{e.dernier_paiement_date || '—'}</td>
                     <td>{e.perce_par || '—'}</td>
                   </tr>

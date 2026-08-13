@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS `remboursements` (
   `paiement_id` int(11) NOT NULL,
   `eleve_id` int(11) NOT NULL,
   `montant` decimal(15,2) NOT NULL,
+  `montant_usd` decimal(15,4) DEFAULT 0.0000,
   `devise` varchar(10) DEFAULT 'USD',
   `motif` text NOT NULL,
   `reference_remboursement` varchar(50) NOT NULL,

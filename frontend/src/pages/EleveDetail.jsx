@@ -2,15 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-
-function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 export default function EleveDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { viewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
@@ -87,20 +85,20 @@ export default function EleveDetail() {
           <div className="card-header"><i className="ph ph-wallet"></i><h3>Situation financière</h3></div>
           <div className="card-body">
             <div className="mb-16">
-              <div className="flex-between mb-12"><span>Scolarité</span><span><strong>{fmt(totaux.totalPayeScolarite)}</strong> / {fmt(eleve.frais_scolarite_total)}</span></div>
+              <div className="flex-between mb-12"><span>Scolarité</span><span><strong>{format(totaux.totalPayeScolarite)}</strong> / {format(eleve.frais_scolarite_total)}</span></div>
               <div className="progress-bar-wrap">
                 <div className={`progress-bar-fill ${totaux.pctScolarite >= 100 ? 'green' : totaux.pctScolarite >= 50 ? 'orange' : 'red'}`} style={{ width: `${totaux.pctScolarite}%` }} />
               </div>
-              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{totaux.pctScolarite}% payé · Reste {fmt(totaux.resteScolarite)}</div>
+              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{totaux.pctScolarite}% payé · Reste {format(totaux.resteScolarite)}</div>
             </div>
             <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div className="stat-card">
                 <div className="stat-icon green"><i className="ph ph-check-circle"></i></div>
-                <div className="stat-info"><div className="label">Inscription payée</div><div className="value" style={{ fontSize: 16 }}>{fmt(totaux.totalPayeInscription)}</div></div>
+                <div className="stat-info"><div className="label">Inscription payée</div><div className="value" style={{ fontSize: 16 }}>{format(totaux.totalPayeInscription)}</div></div>
               </div>
               <div className="stat-card">
                 <div className="stat-icon red"><i className="ph ph-arrow-counter-clockwise"></i></div>
-                <div className="stat-info"><div className="label">Total remboursé</div><div className="value" style={{ fontSize: 16 }}>{fmt(totaux.totalRembourse)}</div></div>
+                <div className="stat-info"><div className="label">Total remboursé</div><div className="value" style={{ fontSize: 16 }}>{format(totaux.totalRembourse)}</div></div>
               </div>
             </div>
           </div>
@@ -118,7 +116,7 @@ export default function EleveDetail() {
                 <tr key={p.id}>
                   <td><code>{p.reference}</code></td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                  <td><strong>{fmt(p.montant, p.devise)}</strong></td>
+                  <td><strong>{format(p.montant_usd)}</strong></td>
                   <td>{p.mode_paiement}</td>
                   <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>

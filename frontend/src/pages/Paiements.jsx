@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-
-function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 export default function Paiements() {
   const { viewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [rows, setRows] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -94,7 +92,7 @@ export default function Paiements() {
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><i className="ph ph-currency-circle-dollar"></i></div>
-          <div className="stat-info"><div className="label">Montant total</div><div className="value">{fmt(meta.somme)}</div></div>
+          <div className="stat-info"><div className="label">Montant total</div><div className="value">{format(meta.somme)}</div></div>
         </div>
       </div>
 
@@ -111,7 +109,7 @@ export default function Paiements() {
                   <td>{p.prenom} {p.nom} <span className="text-muted">({p.matricule})</span></td>
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                  <td><strong>{fmt(p.montant, p.devise)}</strong></td>
+                  <td><strong>{format(p.montant_usd)}</strong></td>
                   <td>{p.mode_paiement}</td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>

@@ -132,6 +132,7 @@ async function main() {
       paiement_id INTEGER NOT NULL,
       eleve_id INTEGER NOT NULL,
       montant NUMERIC NOT NULL,
+      montant_usd NUMERIC DEFAULT 0,
       devise TEXT DEFAULT 'USD',
       motif TEXT NOT NULL,
       reference_remboursement TEXT NOT NULL,

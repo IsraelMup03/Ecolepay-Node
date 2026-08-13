@@ -46,7 +46,7 @@ router.get('/', async (req, res) => {
     `SELECT COUNT(*) as total FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
   );
   const [[{ somme }]] = await db.query(
-    `SELECT COALESCE(SUM(p.montant),0) as somme FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
+    `SELECT COALESCE(SUM(p.montant_usd),0) as somme FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
   );
   const [rows] = await db.query(
     `SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
@@ -115,7 +115,7 @@ router.get('/by-reference', async (req, res) => {
   const ref = (req.query.ref || '').trim();
   if (!ref) return res.json(null);
   const [[p]] = await db.query(
-    `SELECT p.id, p.reference, p.montant, p.devise, p.statut, p.date_paiement,
+    `SELECT p.id, p.reference, p.montant, p.devise, p.montant_usd, p.statut, p.date_paiement,
             e.nom, e.prenom, e.matricule
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id
      WHERE p.reference=? AND p.statut='valide'`,

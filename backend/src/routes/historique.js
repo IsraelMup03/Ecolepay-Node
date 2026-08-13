@@ -49,7 +49,7 @@ router.get('/:annee', async (req, res) => {
   );
 
   const [remboursements] = await db.query(
-    `SELECT r.id, r.reference_remboursement, r.montant, r.devise, r.motif, r.statut, r.date_remboursement,
+    `SELECT r.id, r.reference_remboursement, r.montant, r.montant_usd, r.devise, r.motif, r.statut, r.date_remboursement,
             e.nom, e.prenom, e.matricule, p.reference as pay_ref, u.prenom as appr_prenom, u.nom as appr_nom
      FROM remboursements r
      JOIN paiements p ON p.id=r.paiement_id

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { AnneeProvider } from './context/AnneeContext.jsx';
+import { DeviseProvider } from './context/DeviseContext.jsx';
 import './styles/global.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <AuthProvider>
         <AnneeProvider>
-          <App />
+          <DeviseProvider>
+            <App />
+          </DeviseProvider>
         </AnneeProvider>
       </AuthProvider>
     </BrowserRouter>

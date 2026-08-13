@@ -3,13 +3,12 @@ import { Link } from 'react-router-dom';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-
-function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
+import GenererRapportButton from '../components/GenererRapportButton.jsx';
 
 export default function Dashboard() {
   const { viewingAnnee } = useAnnee();
+  const { format, convert } = useDevise();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -21,10 +20,16 @@ export default function Dashboard() {
   if (loading) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement du tableau de bord...</p></div>;
   if (!data) return <div className="alert alert-danger">Impossible de charger les données.</div>;
 
-  const { stats, mensuel, parClasse, derniers, devise, annee } = data;
+  const { stats, mensuel, parClasse, derniers, annee } = data;
 
   return (
     <div>
+      {!viewingAnnee && (
+        <div className="flex-between mb-16">
+          <div />
+          <GenererRapportButton />
+        </div>
+      )}
       <div className="stat-grid">
         <div className="stat-card">
           <div className="stat-icon blue"><i className="ph-bold ph-graduation-cap"></i></div>
@@ -46,7 +51,7 @@ export default function Dashboard() {
           <div className="stat-icon green"><i className="ph-bold ph-currency-circle-dollar"></i></div>
           <div className="stat-info">
             <div className="label">Total encaissé</div>
-            <div className="value">{fmt(stats.totalAnnee, devise)}</div>
+            <div className="value">{format(stats.totalAnnee)}</div>
             <div className="sub">Sur l'année {annee}</div>
           </div>
         </div>
@@ -55,8 +60,8 @@ export default function Dashboard() {
             <div className="stat-icon orange"><i className="ph-bold ph-calendar-check"></i></div>
             <div className="stat-info">
               <div className="label">Aujourd'hui</div>
-              <div className="value">{fmt(stats.paiementsAujourdhui, devise)}</div>
-              <div className="sub">Ce mois : {fmt(stats.paiementsMois, devise)}</div>
+              <div className="value">{format(stats.paiementsAujourdhui)}</div>
+              <div className="sub">Ce mois : {format(stats.paiementsMois)}</div>
             </div>
           </div>
         )}
@@ -65,7 +70,7 @@ export default function Dashboard() {
           <div className="stat-info">
             <div className="label">Taux de recouvrement</div>
             <div className="value">{stats.taux}%</div>
-            <div className="sub">Attendu : {fmt(stats.totalAttendu, devise)}</div>
+            <div className="sub">Attendu : {format(stats.totalAttendu)}</div>
           </div>
         </div>
         <div className="stat-card">
@@ -92,8 +97,8 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e6efec" />
                 <XAxis dataKey="lbl" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => fmt(v, devise)} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => convert(v).toLocaleString('fr-FR')} />
+                <Tooltip formatter={(v) => format(v)} />
                 <Area type="monotone" dataKey="total" stroke="#059669" fill="url(#colorTotal)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -107,8 +112,8 @@ export default function Dashboard() {
               <BarChart data={parClasse}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e6efec" />
                 <XAxis dataKey="classe" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => fmt(v, devise)} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => convert(v).toLocaleString('fr-FR')} />
+                <Tooltip formatter={(v) => format(v)} />
                 <Bar dataKey="total_paye" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Payé" />
                 <Bar dataKey="total_attendu" fill="#d7e3de" radius={[4, 4, 0, 0]} name="Attendu" />
               </BarChart>
@@ -133,7 +138,7 @@ export default function Dashboard() {
                   <td>{p.prenom} {p.nom}</td>
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                  <td><strong>{fmt(p.montant, p.devise)}</strong></td>
+                  <td><strong>{format(p.montant_usd)}</strong></td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                 </tr>
               ))}

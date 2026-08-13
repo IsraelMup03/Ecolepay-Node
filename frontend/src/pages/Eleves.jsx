@@ -2,16 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-
-function fmt(n) {
-  return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 const STATUT_PAIEMENT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
 const STATUT_PAIEMENT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
 
 export default function Eleves() {
   const { viewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [eleves, setEleves] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -128,8 +126,8 @@ export default function Eleves() {
                         ? <span className={`badge ${STATUT_PAIEMENT_BADGE[e.statut_paiement] || 'badge-default'}`}>{STATUT_PAIEMENT_LABELS[e.statut_paiement] || e.statut_paiement}</span>
                         : <span className={`badge ${e.statut === 'actif' ? 'badge-success' : e.statut === 'redoublant' ? 'badge-warning' : 'badge-default'}`}>{e.statut}</span>}
                     </td>
-                    <td>{fmt(e.total_paye)}</td>
-                    <td className={reste > 0 ? '' : 'text-muted'}><strong style={{ color: reste > 0 ? 'var(--danger)' : 'var(--success)' }}>{fmt(reste)}</strong></td>
+                    <td>{format(e.total_paye)}</td>
+                    <td className={reste > 0 ? '' : 'text-muted'}><strong style={{ color: reste > 0 ? 'var(--danger)' : 'var(--success)' }}>{format(reste)}</strong></td>
                     <td><Link to={`/eleves/${e.id}`} className="btn btn-outline btn-sm"><i className="ph ph-eye"></i> Fiche</Link></td>
                   </tr>
                 );

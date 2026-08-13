@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
+import { useDevise } from '../context/DeviseContext.jsx';
 import { API_URL } from '../api/client.js';
 import GlobalSearch from './GlobalSearch.jsx';
 
@@ -69,6 +70,7 @@ function findGroupIndex(groups, pathname) {
 export default function Layout({ children }) {
   const { user, logout, hasPermission, ecole } = useAuth();
   const { viewingAnnee, setViewingAnnee } = useAnnee();
+  const { devise, deviseLocale, toggleDevise } = useDevise();
   const location = useLocation();
   const [title, subtitle] = findTitle(location.pathname);
 
@@ -152,6 +154,15 @@ export default function Layout({ children }) {
               <div className="subtitle">{subtitle}</div>
             </div>
             <GlobalSearch />
+            <button
+              type="button"
+              className="devise-toggle"
+              onClick={toggleDevise}
+              title={`Afficher les montants en ${devise === 'USD' ? deviseLocale : 'USD'}`}
+            >
+              <span className={devise === 'USD' ? 'active' : ''}>USD</span>
+              <span className={devise !== 'USD' ? 'active' : ''}>{deviseLocale === 'CDF' ? 'FC' : deviseLocale}</span>
+            </button>
             <div className="topbar-user">
               <div className="info">
                 <div><strong>{user?.prenom} {user?.nom}</strong></div>

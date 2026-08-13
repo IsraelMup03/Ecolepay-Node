@@ -2,10 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-
-function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 const STATUT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
 const STATUT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
@@ -13,6 +10,7 @@ const STATUT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_pay
 export default function Historique() {
   const navigate = useNavigate();
   const { viewingAnnee, setViewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [annees, setAnnees] = useState([]);
   const [anneeCourante, setAnneeCourante] = useState(null);
   const [annee, setAnnee] = useState(null);
@@ -64,7 +62,7 @@ export default function Historique() {
           <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
             <div className="stat-card">
               <div className="stat-icon green"><i className="ph-bold ph-currency-circle-dollar"></i></div>
-              <div className="stat-info"><div className="label">Total encaissé</div><div className="value">{fmt(data.resume.total_encaisse)}</div></div>
+              <div className="stat-info"><div className="label">Total encaissé</div><div className="value">{format(data.resume.total_encaisse)}</div></div>
             </div>
             <div className="stat-card">
               <div className="stat-icon blue"><i className="ph-bold ph-list-checks"></i></div>
@@ -99,7 +97,7 @@ export default function Historique() {
                         <td>{p.prenom} {p.nom} <span className="text-muted">({p.matricule})</span></td>
                         <td>{p.classe || '—'}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                        <td><strong>{fmt(p.montant, p.devise)}</strong></td>
+                        <td><strong>{format(p.montant_usd)}</strong></td>
                         <td>{p.mode_paiement}</td>
                         <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
                         <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
@@ -131,7 +129,7 @@ export default function Historique() {
                         <td><code>{r.reference_remboursement}</code></td>
                         <td>{r.prenom} {r.nom} <span className="text-muted">({r.matricule})</span></td>
                         <td><code>{r.pay_ref}</code></td>
-                        <td><strong>{fmt(r.montant, r.devise)}</strong></td>
+                        <td><strong>{format(r.montant_usd)}</strong></td>
                         <td className="text-muted">{r.motif}</td>
                         <td><span className={`badge ${r.statut === 'approuve' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{r.statut}</span></td>
                         <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
@@ -156,8 +154,8 @@ export default function Historique() {
                         <td>{s.prenom} {s.nom}</td>
                         <td><code>{s.matricule}</code></td>
                         <td>{s.classe_nom || '—'}</td>
-                        <td>{fmt(s.frais_scolarite_total)}</td>
-                        <td>{fmt(s.total_paye)}</td>
+                        <td>{format(s.frais_scolarite_total)}</td>
+                        <td>{format(s.total_paye)}</td>
                         <td><span className={`badge ${STATUT_BADGE[s.statut_paiement] || 'badge-default'}`}>{STATUT_LABELS[s.statut_paiement] || s.statut_paiement}</span></td>
                       </tr>
                     ))}

@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
+import { useDevise } from '../context/DeviseContext.jsx';
 import HistoricalBlock from '../components/HistoricalBlock.jsx';
-
-function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 // Calcule automatiquement l'année scolaire suivante à partir de l'année en cours (ex: "2024-2025" -> "2025-2026")
 function suggererAnneeSuivante(anneeCourante) {
@@ -15,6 +14,7 @@ function suggererAnneeSuivante(anneeCourante) {
 
 export default function Promotion() {
   const { viewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [preview, setPreview] = useState([]);
   const [anneeCourante, setAnneeCourante] = useState('');
   const [loading, setLoading] = useState(true);
@@ -113,7 +113,7 @@ export default function Promotion() {
                 <tr key={e.id}>
                   <td>{e.prenom} {e.nom}</td>
                   <td>{e.classe_actuelle}</td>
-                  <td>{fmt(e.total_paye)}</td>
+                  <td>{format(e.total_paye)}</td>
                   <td>
                     {e.classe_suivante
                       ? <span className="badge badge-info"><i className="ph ph-arrow-right"></i> {e.classe_suivante}</span>

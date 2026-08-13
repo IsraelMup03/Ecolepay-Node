@@ -1,7 +1,17 @@
 const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
-const { getParam } = require('../utils/helpers');
+const { getParam, getEcole } = require('../utils/helpers');
+const { newWorkbook, addLetterhead, addTable, sendWorkbook, deviseLabel } = require('../utils/excelReport');
+
+// Lit devise=USD|CDF (ou autre code local) depuis la query et le taux de change courant,
+// pour que les exports Excel respectent le meme bascule USD<->devise locale que le reste
+// du logiciel (voir DeviseContext cote frontend).
+async function resolveDevise(req) {
+  const devise = req.query.devise === 'CDF' || (req.query.devise && req.query.devise !== 'USD') ? req.query.devise : 'USD';
+  const taux = parseFloat(await getParam('taux_usd_cdf', '1')) || 1;
+  return { devise, taux };
+}
 
 const router = express.Router();
 router.use(requireAuth, requirePermission('rapports'));
@@ -206,9 +216,9 @@ router.get('/', async (req, res) => {
   });
 });
 
-// --- CSV export endpoints ---
-// GET /api/rapports/download/eleves.csv?classe_id=&status=solde|non_solde|partiel|non_paye&annee=
-router.get('/download/eleves.csv', async (req, res) => {
+// --- Exports Excel (.xlsx) ---
+// GET /api/rapports/download/eleves.xlsx?classe_id=&status=solde|non_solde|partiel|non_paye&annee=
+router.get('/download/eleves.xlsx', async (req, res) => {
   try {
     const { classe_id, status, annee } = req.query;
     const anneeCourante = await getParam('annee_scolaire_courante');
@@ -276,38 +286,43 @@ router.get('/download/eleves.csv', async (req, res) => {
       );
     }
 
-    const meta = [];
-    meta.push(`# Rapport: Liste des élèves (${statusLabels[status] || 'Tous'})${modeHistorique ? ` — année ${annee}` : ''}`);
-    meta.push(`# Classe: ${className}`);
-    meta.push(`# Généré le: ${new Date().toLocaleString()}`);
-    meta.push('# Colonnes: Matricule;Nom;Prénom;Total payé;Reste;Date paiement;Perçu par;Classe');
-
-    const header = ['Matricule', 'Nom', 'Prénom', 'Total payé', 'Reste', 'Date paiement', 'Perçu par', 'Classe'];
-    const lines = [header.join(';')];
-    rows.forEach((e) => {
-      lines.push([
-        e.matricule || '',
-        e.nom || '',
-        e.prenom || '',
-        e.total_paye || 0,
-        e.reste || 0,
-        e.date_paiement || '',
-        e.perce_par || '',
-        e.classe || '',
-      ].join(';'));
+    const ecole = await getEcole();
+    const { devise, taux } = await resolveDevise(req);
+    const workbook = newWorkbook();
+    const sheet = workbook.addWorksheet('Élèves', { views: [{ state: 'frozen', ySplit: 8 }] });
+    const columns = [
+      { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
+      { header: 'Nom', key: 'nom', width: 18, type: 'text' },
+      { header: 'Prénom', key: 'prenom', width: 18, type: 'text' },
+      { header: 'Classe', key: 'classe', width: 22, type: 'text' },
+      { header: 'Total payé', key: 'total_paye', width: 16, type: 'currency', totalize: true },
+      { header: 'Reste', key: 'reste', width: 16, type: 'currency', totalize: true },
+      { header: 'Dernier paiement', key: 'date_paiement', width: 20, type: 'text' },
+      { header: 'Perçu par', key: 'perce_par', width: 20, type: 'text' },
+    ];
+    const nextRow = addLetterhead(sheet, {
+      ecole,
+      title: `Liste des élèves — ${statusLabels[status] || 'Tous'}${modeHistorique ? ` (année ${annee})` : ''}`,
+      subtitle: `Classe : ${className}`,
+      generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
+      numCols: columns.length,
     });
+    addTable(sheet, nextRow, columns, rows.map((e) => ({
+      matricule: e.matricule || '', nom: e.nom || '', prenom: e.prenom || '', classe: e.classe || '',
+      total_paye: parseFloat(e.total_paye) || 0, reste: parseFloat(e.reste) || 0,
+      date_paiement: e.date_paiement ? new Date(e.date_paiement).toLocaleDateString('fr-FR') : '—',
+      perce_par: e.perce_par || '—',
+    })), { showTotals: true, devise, taux });
 
-    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-    res.setHeader('Content-Disposition', `attachment; filename="eleves_${status || 'liste'}_${Date.now()}.csv"`);
-    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+    await sendWorkbook(res, workbook, `eleves_${status || 'liste'}_${Date.now()}.xlsx`);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
   }
 });
 
-// GET /api/rapports/download/par-classe.csv?classe_id=&annee=
-router.get('/download/par-classe.csv', async (req, res) => {
+// GET /api/rapports/download/par-classe.xlsx?classe_id=&annee=
+router.get('/download/par-classe.xlsx', async (req, res) => {
   try {
     const { classe_id, annee } = req.query;
     const anneeCourante = await getParam('annee_scolaire_courante');
@@ -342,29 +357,41 @@ router.get('/download/par-classe.csv', async (req, res) => {
       );
     }
 
-    const meta = [
-      `# Rapport: Recouvrement par classe${modeHistorique ? ` — année ${annee}` : ''}`,
-      `# Généré le: ${new Date().toLocaleString()}`,
-      '# Colonnes: Classe;Effectif;Payé(USD);Attendu(USD);% Recouvrement;Élèves soldés',
+    const ecole = await getEcole();
+    const { devise, taux } = await resolveDevise(req);
+    const workbook = newWorkbook();
+    const sheet = workbook.addWorksheet('Recouvrement par classe');
+    const columns = [
+      { header: 'Classe', key: 'classe', width: 26, type: 'text' },
+      { header: 'Effectif', key: 'nb_eleves', width: 12, type: 'number', totalize: true },
+      { header: 'Payé', key: 'total_paye', width: 16, type: 'currency', totalize: true },
+      { header: 'Attendu', key: 'total_attendu', width: 16, type: 'currency', totalize: true },
+      { header: 'Recouvrement', key: 'pct', width: 14, type: 'percent' },
+      { header: 'Élèves soldés', key: 'nb_soldes', width: 14, type: 'number', totalize: true },
     ];
-    const header = ['Classe', 'Effectif', 'Payé(USD)', 'Attendu(USD)', '% Recouvrement', 'Élèves soldés'];
-    const lines = [header.join(';')];
-    rows.forEach((r) => {
-      const pct = r.total_attendu > 0 ? Math.round((r.total_paye / r.total_attendu) * 1000) / 10 : 0;
-      lines.push([r.classe, r.nb_eleves, r.total_paye, r.total_attendu, pct, r.nb_soldes].join(';'));
+    const nextRow = addLetterhead(sheet, {
+      ecole,
+      title: `Recouvrement par classe${modeHistorique ? ` — année ${annee}` : ''}`,
+      subtitle: null,
+      generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
+      numCols: columns.length,
     });
+    addTable(sheet, nextRow, columns, rows.map((r) => ({
+      classe: r.classe || '—', nb_eleves: r.nb_eleves || 0,
+      total_paye: parseFloat(r.total_paye) || 0, total_attendu: parseFloat(r.total_attendu) || 0,
+      pct: r.total_attendu > 0 ? Math.round((r.total_paye / r.total_attendu) * 1000) / 10 : 0,
+      nb_soldes: r.nb_soldes || 0,
+    })), { showTotals: true, devise, taux });
 
-    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-    res.setHeader('Content-Disposition', `attachment; filename="recouvrement_par_classe_${Date.now()}.csv"`);
-    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+    await sendWorkbook(res, workbook, `recouvrement_par_classe_${Date.now()}.xlsx`);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
   }
 });
 
-// GET /api/rapports/download/par-mode.csv?debut=&fin=&classe_id=&annee=
-router.get('/download/par-mode.csv', async (req, res) => {
+// GET /api/rapports/download/par-mode.xlsx?debut=&fin=&classe_id=&annee=
+router.get('/download/par-mode.xlsx', async (req, res) => {
   try {
     const { debut, fin, classe_id, annee } = req.query;
     const anneeCourante = await getParam('annee_scolaire_courante');
@@ -388,64 +415,160 @@ router.get('/download/par-mode.csv', async (req, res) => {
     );
     const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
 
-    const meta = [
-      '# Rapport: Répartition par mode de paiement',
-      `# Année: ${anneeCible}${!modeHistorique ? ` (période: ${debut || 'début'} → ${fin || "aujourd'hui"})` : ''}`,
-      `# Généré le: ${new Date().toLocaleString()}`,
-      '# Colonnes: Mode;Nombre de paiements;Total(USD)',
+    const ecole = await getEcole();
+    const { devise, taux } = await resolveDevise(req);
+    const workbook = newWorkbook();
+    const sheet = workbook.addWorksheet('Répartition par mode');
+    const columns = [
+      { header: 'Mode de paiement', key: 'mode', width: 24, type: 'text' },
+      { header: 'Nombre de paiements', key: 'nb', width: 20, type: 'number', totalize: true },
+      { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
     ];
-    const header = ['Mode', 'Nombre de paiements', 'Total(USD)'];
-    const lines = [header.join(';')];
-    rows.forEach((r) => {
-      lines.push([MODE_LABELS[r.mode_paiement] || r.mode_paiement, r.nb, r.total || 0].join(';'));
+    const nextRow = addLetterhead(sheet, {
+      ecole,
+      title: `Répartition par mode de paiement — ${anneeCible}`,
+      subtitle: !modeHistorique ? `Période : ${debut || 'début'} → ${fin || "aujourd'hui"}` : null,
+      generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
+      numCols: columns.length,
     });
+    addTable(sheet, nextRow, columns, rows.map((r) => ({
+      mode: MODE_LABELS[r.mode_paiement] || r.mode_paiement, nb: r.nb || 0, total: parseFloat(r.total) || 0,
+    })), { showTotals: true, devise, taux });
 
-    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-    res.setHeader('Content-Disposition', `attachment; filename="repartition_par_mode_${Date.now()}.csv"`);
-    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+    await sendWorkbook(res, workbook, `repartition_par_mode_${Date.now()}.xlsx`);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
   }
 });
 
-// GET /api/rapports/download/paiements-today.csv?date=YYYY-MM-DD
-router.get('/download/paiements-today.csv', async (req, res) => {
+// GET /api/rapports/download/periode.xlsx?type=jour|semaine|mois&date=YYYY-MM-DD
+// Rapport de caisse (journalier / hebdomadaire / mensuel), scope a l'annee scolaire en cours.
+router.get('/download/periode.xlsx', async (req, res) => {
   try {
-    const date = req.query.date || null;
-    const params = [];
-    const dateFilter = date ? 'DATE(p.date_paiement)=?' : 'DATE(p.date_paiement)=CURDATE()';
-    if (date) params.push(date);
+    const type = ['jour', 'semaine', 'mois'].includes(req.query.type) ? req.query.type : 'jour';
+    const refDate = req.query.date ? new Date(`${req.query.date}T00:00:00`) : new Date();
 
-    const [rows] = await db.query(
-      `SELECT p.reference, p.montant_usd as montant_usd, p.devise, p.mode_paiement, p.type_paiement, p.statut,
-              p.date_paiement, e.matricule, e.nom, e.prenom, c.nom as classe
-       FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
-       WHERE ${dateFilter} AND p.statut='valide' ORDER BY p.date_paiement ASC`,
-      params
+    let debut, fin, labelType;
+    if (type === 'jour') {
+      debut = new Date(refDate); debut.setHours(0, 0, 0, 0);
+      fin = new Date(refDate); fin.setHours(23, 59, 59, 999);
+      labelType = 'Rapport journalier';
+    } else if (type === 'semaine') {
+      const jourSemaine = (refDate.getDay() + 6) % 7; // 0 = lundi
+      debut = new Date(refDate); debut.setDate(refDate.getDate() - jourSemaine); debut.setHours(0, 0, 0, 0);
+      fin = new Date(debut); fin.setDate(debut.getDate() + 6); fin.setHours(23, 59, 59, 999);
+      labelType = 'Rapport hebdomadaire';
+    } else {
+      debut = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
+      fin = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
+      labelType = 'Rapport mensuel';
+    }
+    const sqlFmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+    const periodeLabel = type === 'jour'
+      ? debut.toLocaleDateString('fr-FR')
+      : `${debut.toLocaleDateString('fr-FR')} → ${fin.toLocaleDateString('fr-FR')}`;
+
+    // Scope a l'annee scolaire en cours : un rapport de caisse melangeant des paiements
+    // d'une annee deja archivee avec l'annee en cours ne serait plus coherent avec le
+    // reste du logiciel (Dashboard, Rapports) qui raisonnent toujours par annee scolaire.
+    const anneeCourante = await getParam('annee_scolaire_courante');
+
+    const [paiements] = await db.query(
+      `SELECT p.reference, p.montant_usd, p.devise, p.mode_paiement, p.type_paiement, p.date_paiement,
+              e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+       FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
+       LEFT JOIN utilisateurs u ON u.id=p.comptable_id
+       WHERE p.statut='valide' AND p.annee_scolaire=? AND p.date_paiement BETWEEN ? AND ?
+       ORDER BY p.date_paiement ASC`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
+    const [parMode] = await db.query(
+      `SELECT mode_paiement, COUNT(*) as nb, SUM(montant_usd) as total FROM paiements
+       WHERE statut='valide' AND annee_scolaire=? AND date_paiement BETWEEN ? AND ? GROUP BY mode_paiement`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
+    const [parMotif] = await db.query(
+      `SELECT type_paiement, COUNT(*) as nb, SUM(montant_usd) as total FROM paiements
+       WHERE statut='valide' AND annee_scolaire=? AND date_paiement BETWEEN ? AND ? GROUP BY type_paiement ORDER BY total DESC`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
+    const [parClasse] = await db.query(
+      `SELECT c.nom as classe, COUNT(*) as nb, SUM(p.montant_usd) as total
+       FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
+       WHERE p.statut='valide' AND p.annee_scolaire=? AND p.date_paiement BETWEEN ? AND ? GROUP BY e.classe_id ORDER BY total DESC`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
 
-    const total = rows.reduce((s, r) => s + parseFloat(r.montant_usd || 0), 0);
+    const totalEncaisse = paiements.reduce((s, p) => s + (parseFloat(p.montant_usd) || 0), 0);
+    const ecole = await getEcole();
+    const { devise, taux } = await resolveDevise(req);
+    const generatedBy = req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null;
+    const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
+    const MOTIF_LABELS = { scolarite: 'Scolarité', inscription: 'Inscription', uniforme: 'Uniforme', fournitures: 'Fournitures', cantine: 'Cantine', transport: 'Transport', excursion: 'Excursion', examen: 'Examen', assurance: 'Assurance', activites: 'Activités', autre: 'Autre' };
+    const totalEncaisseAffiche = devise === 'USD' ? totalEncaisse : totalEncaisse * taux;
+    const decimalesTotal = devise === 'USD' ? 2 : 0;
 
-    const meta = [];
-    meta.push('# Rapport: Paiements du jour');
-    meta.push(`# Date: ${date || new Date().toISOString().slice(0,10)}`);
-    meta.push(`# Nombre de paiements: ${rows.length}`);
-    meta.push(`# Total (USD): ${total.toFixed(2)}`);
-    meta.push('# Colonnes: Reference;Montant(USD);Devise;Mode;Type;Statut;Date;Matricule;Nom;Prenom;Classe');
+    const workbook = newWorkbook();
 
-    const header = ['Reference', 'Montant(USD)', 'Devise', 'Mode', 'Type', 'Statut', 'Date', 'Matricule', 'Nom', 'Prenom', 'Classe'];
-    const lines = [header.join(';')];
-    rows.forEach((p) => {
-      lines.push([p.reference, p.montant_usd || 0, p.devise || '', p.mode_paiement || '', p.type_paiement || '', p.statut || '', p.date_paiement || '', p.matricule || '', p.nom || '', p.prenom || '', p.classe || ''].join(';'));
+    // --- Feuille 1 : Résumé ---
+    const resume = workbook.addWorksheet('Résumé');
+    let r = addLetterhead(resume, {
+      ecole, title: `${labelType} — ${periodeLabel}`,
+      subtitle: `${paiements.length} paiement(s) — Total encaissé : ${totalEncaisseAffiche.toLocaleString('fr-FR', { minimumFractionDigits: decimalesTotal, maximumFractionDigits: decimalesTotal })} ${deviseLabel(devise)}`,
+      generatedBy, numCols: 3,
     });
+    r = addTable(resume, r, [
+      { header: 'Mode de paiement', key: 'label', width: 24, type: 'text' },
+      { header: 'Nombre', key: 'nb', width: 14, type: 'number', totalize: true },
+      { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
+    ], parMode.map((m) => ({ label: MODE_LABELS[m.mode_paiement] || m.mode_paiement, nb: m.nb, total: parseFloat(m.total) || 0 })), { showTotals: true, devise, taux });
 
-    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-    res.setHeader('Content-Disposition', `attachment; filename="paiements_${date || 'today'}_${Date.now()}.csv"`);
-    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+    resume.getCell(`A${r}`).value = 'Répartition par motif';
+    resume.getCell(`A${r}`).font = { bold: true, size: 11, color: { argb: 'FF065F46' } };
+    r += 1;
+    r = addTable(resume, r, [
+      { header: 'Motif', key: 'label', width: 24, type: 'text' },
+      { header: 'Nombre', key: 'nb', width: 14, type: 'number', totalize: true },
+      { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
+    ], parMotif.map((m) => ({ label: MOTIF_LABELS[m.type_paiement] || m.type_paiement, nb: m.nb, total: parseFloat(m.total) || 0 })), { showTotals: true, devise, taux });
+
+    resume.getCell(`A${r}`).value = 'Répartition par classe';
+    resume.getCell(`A${r}`).font = { bold: true, size: 11, color: { argb: 'FF065F46' } };
+    r += 1;
+    addTable(resume, r, [
+      { header: 'Classe', key: 'classe', width: 24, type: 'text' },
+      { header: 'Nombre', key: 'nb', width: 14, type: 'number', totalize: true },
+      { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
+    ], parClasse.map((c) => ({ classe: c.classe || '—', nb: c.nb, total: parseFloat(c.total) || 0 })), { showTotals: true, devise, taux });
+
+    // --- Feuille 2 : Détail des paiements ---
+    const detail = workbook.addWorksheet('Détail des paiements', { views: [{ state: 'frozen', ySplit: 8 }] });
+    const detailCols = [
+      { header: 'Référence', key: 'reference', width: 22, type: 'text' },
+      { header: 'Élève', key: 'eleve', width: 24, type: 'text' },
+      { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
+      { header: 'Classe', key: 'classe', width: 22, type: 'text' },
+      { header: 'Motif', key: 'motif', width: 16, type: 'text' },
+      { header: 'Mode', key: 'mode', width: 16, type: 'text' },
+      { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Date', key: 'date', width: 18, type: 'text' },
+      { header: 'Encaissé par', key: 'encaisse_par', width: 20, type: 'text' },
+    ];
+    const rDetail = addLetterhead(detail, {
+      ecole, title: `${labelType} — Détail des paiements`, subtitle: periodeLabel, generatedBy, numCols: detailCols.length,
+    });
+    addTable(detail, rDetail, detailCols, paiements.map((p) => ({
+      reference: p.reference, eleve: `${p.prenom} ${p.nom}`, matricule: p.matricule, classe: p.classe || '—',
+      motif: MOTIF_LABELS[p.type_paiement] || p.type_paiement, mode: MODE_LABELS[p.mode_paiement] || p.mode_paiement,
+      montant: parseFloat(p.montant_usd) || 0, date: new Date(p.date_paiement).toLocaleString('fr-FR'),
+      encaisse_par: p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—',
+    })), { showTotals: true, devise, taux });
+
+    await sendWorkbook(res, workbook, `rapport_${type}_${sqlFmt(debut).slice(0, 10)}.xlsx`);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
   }
 });
 

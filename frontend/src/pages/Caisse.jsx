@@ -3,14 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import HistoricalBlock from '../components/HistoricalBlock.jsx';
-
-function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
-}
+import { useDevise } from '../context/DeviseContext.jsx';
 
 export default function Caisse() {
   const navigate = useNavigate();
   const { viewingAnnee } = useAnnee();
+  const { format } = useDevise();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -88,7 +86,7 @@ export default function Caisse() {
                 {results.map((e) => (
                   <div key={e.id} className="search-result-item" onClick={() => selectEleve(e)}>
                     <span><strong>{e.prenom} {e.nom}</strong> — {e.matricule} · {e.classe}</span>
-                    <span className="text-muted">Reste: {fmt(e.reste)}</span>
+                    <span className="text-muted">Reste: {format(e.reste)}</span>
                   </div>
                 ))}
               </div>
@@ -104,12 +102,12 @@ export default function Caisse() {
               <div className="text-muted mb-16">{caisseInfo.eleve.classe_nom}</div>
 
               <div className="mb-12">
-                <div className="flex-between mb-12"><span>Scolarité</span><span>{fmt(caisseInfo.eleve.total_paye_scolarite)} / {fmt(caisseInfo.eleve.frais_scolarite_total)}</span></div>
+                <div className="flex-between mb-12"><span>Scolarité</span><span>{format(caisseInfo.eleve.total_paye_scolarite)} / {format(caisseInfo.eleve.frais_scolarite_total)}</span></div>
                 <div className="progress-bar-wrap">
                   <div className={`progress-bar-fill ${caisseInfo.eleve.reste_scolarite <= 0 ? 'green' : 'orange'}`}
                     style={{ width: `${Math.min(100, (caisseInfo.eleve.total_paye_scolarite / (caisseInfo.eleve.frais_scolarite_total || 1)) * 100)}%` }} />
                 </div>
-                <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Reste: {fmt(caisseInfo.eleve.reste_scolarite)}</div>
+                <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Reste: {format(caisseInfo.eleve.reste_scolarite)}</div>
               </div>
 
               <h4 style={{ fontSize: 13, marginTop: 16, marginBottom: 8 }}>Historique récent</h4>
@@ -120,7 +118,7 @@ export default function Caisse() {
                       <tr key={p.id}>
                         <td>{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                        <td><strong>{fmt(p.montant, p.devise)}</strong></td>
+                        <td><strong>{format(p.montant_usd)}</strong></td>
                       </tr>
                     ))}
                     {caisseInfo.historique.length === 0 && <tr><td className="text-muted">Aucun paiement encore.</td></tr>}

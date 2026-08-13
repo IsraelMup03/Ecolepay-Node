@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import RowMenu from '../components/RowMenu.jsx';
-
-function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+import { useDevise } from '../context/DeviseContext.jsx';
 
 const empty = { nom: '', frais_scolarite: '', frais_inscription: '', classe_superieure_id: '', classe_inferieure_id: '', effectif_max: 50, ordre: 0 };
 
 export default function Classes() {
   const { viewingAnnee } = useAnnee();
+  const { format, devise } = useDevise();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -89,21 +89,21 @@ export default function Classes() {
 
   async function downloadEleves(classeId, status) {
     try {
-      const res = await client.get('/rapports/download/eleves.csv', {
-        params: { classe_id: classeId, status },
+      const res = await client.get('/rapports/download/eleves.xlsx', {
+        params: { classe_id: classeId, status, devise },
         responseType: 'blob',
       });
-      const blob = new Blob([res.data], { type: 'text/csv;charset=UTF-8' });
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `eleves_${status}_${classeId || 'all'}_${Date.now()}.csv`;
+      a.download = `eleves_${status}_${classeId || 'all'}_${Date.now()}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err.response?.data?.error || 'Erreur lors du telechargement du CSV.');
+      alert(err.response?.data?.error || 'Erreur lors du telechargement du rapport.');
     }
   }
 
@@ -136,8 +136,8 @@ export default function Classes() {
                       <button className="btn btn-link btn-sm" onClick={() => openViewClass(c)} style={{ marginLeft: 8 }}>Voir</button>
                     </div>
                   </td>
-                  <td>{fmt(c.frais_scolarite)} {c.devise}</td>
-                  <td>{fmt(c.frais_inscription)} {c.devise}</td>
+                  <td>{format(c.frais_scolarite)}</td>
+                  <td>{format(c.frais_inscription)}</td>
                   <td>{c.effectif_max}</td>
                   <td className="text-muted">{classes.find((x) => x.id === c.classe_superieure_id)?.nom || '—'}</td>
                   <td>

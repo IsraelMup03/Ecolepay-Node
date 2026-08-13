@@ -100,8 +100,9 @@ router.get('/', async (req, res) => {
   const [mensuel] = await db.query(
     `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
             SUM(montant_usd) as total, COUNT(*) as nb
-     FROM paiements WHERE statut='valide' AND date_paiement >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
-     GROUP BY DATE_FORMAT(date_paiement,'%Y-%m') ORDER BY mk ASC`
+     FROM paiements WHERE statut='valide' AND annee_scolaire=? AND date_paiement >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+     GROUP BY DATE_FORMAT(date_paiement,'%Y-%m') ORDER BY mk ASC`,
+    [annee]
   );
 
   const [parClasse] = await db.query(
