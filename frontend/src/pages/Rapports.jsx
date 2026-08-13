@@ -1,10 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import client from '../api/client.js';
+import client, { API_URL } from '../api/client.js';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 const COLORS = ['#059669', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626'];
 const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
+
+function downloadCsv(path, params, filename) {
+  const token = localStorage.getItem('ecolepay_token');
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v))).toString();
+  fetch(`${API_URL}${path}?${qs}`, { headers: { Authorization: `Bearer ${token}` } })
+    .then((res) => res.blob())
+    .then((blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      window.URL.revokeObjectURL(url);
+    });
+}
 
 export default function Rapports() {
   const [classes, setClasses] = useState([]);
@@ -28,6 +41,13 @@ export default function Rapports() {
   if (!data) return null;
 
   const modeData = data.parMode.map((m) => ({ name: MODE_LABELS[m.mode_paiement] || m.mode_paiement, value: parseFloat(m.total) }));
+
+  const TABS = {
+    soldes: { label: 'Soldés', rows: data.elevesSoldes, status: 'solde' },
+    partiels: { label: 'Partiels', rows: data.elevesPartiels, status: 'partiel' },
+    non_payes: { label: 'Non payés', rows: data.elevesNonPayes, status: 'non_paye' },
+  };
+  const activeTab = TABS[tab];
 
   return (
     <div>
@@ -74,7 +94,14 @@ export default function Rapports() {
         </div>
 
         <div className="card">
-          <div className="card-header"><i className="ph ph-chart-donut"></i><h3>Répartition par mode de paiement</h3></div>
+          <div className="card-header">
+            <i className="ph ph-chart-donut"></i><h3>Répartition par mode de paiement</h3>
+            <div className="card-actions">
+              <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/par-mode.csv', { debut, fin, classe_id: classeId }, 'repartition_par_mode.csv')}>
+                <i className="ph ph-download-simple"></i> Télécharger
+              </button>
+            </div>
+          </div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
@@ -90,7 +117,14 @@ export default function Rapports() {
       </div>
 
       <div className="card mb-16">
-        <div className="card-header"><i className="ph ph-chart-bar"></i><h3>Recouvrement par classe</h3></div>
+        <div className="card-header">
+          <i className="ph ph-chart-bar"></i><h3>Recouvrement par classe</h3>
+          <div className="card-actions">
+            <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/par-classe.csv', { classe_id: classeId }, 'recouvrement_par_classe.csv')}>
+              <i className="ph ph-download-simple"></i> Télécharger
+            </button>
+          </div>
+        </div>
         <div className="card-body">
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={data.parClasse}>
@@ -119,34 +153,30 @@ export default function Rapports() {
       </div>
 
       <div className="card">
-        <div className="tabs" style={{ padding: '0 18px', paddingTop: 14 }}>
-          <button className={tab === 'soldes' ? 'active' : ''} onClick={() => setTab('soldes')}>Élèves soldés ({data.elevesSoldes.length})</button>
-          <button className={tab === 'non_soldes' ? 'active' : ''} onClick={() => setTab('non_soldes')}>Élèves non soldés ({data.elevesNonSoldes.length})</button>
+        <div className="flex-between" style={{ padding: '14px 18px 0' }}>
+          <div className="tabs" style={{ marginBottom: 0, borderBottom: 'none' }}>
+            {Object.entries(TABS).map(([key, t]) => (
+              <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{t.label} ({t.rows.length})</button>
+            ))}
+          </div>
+          <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/eleves.csv', { classe_id: classeId, status: activeTab.status }, `eleves_${activeTab.status}.csv`)}>
+            <i className="ph ph-download-simple"></i> Télécharger cette liste
+          </button>
         </div>
         <div className="table-container">
-          {tab === 'soldes' ? (
-            <table>
-              <thead><tr><th>Matricule</th><th>Élève</th><th>Classe</th></tr></thead>
-              <tbody>
-                {data.elevesSoldes.map((e) => <tr key={e.id}><td><code>{e.matricule}</code></td><td>{e.prenom} {e.nom}</td><td>{e.classe}</td></tr>)}
-                {data.elevesSoldes.length === 0 && <tr><td colSpan={3} className="text-center text-muted">Aucun élève.</td></tr>}
-              </tbody>
-            </table>
-          ) : (
-            <table>
-              <thead><tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Payé</th><th>Reste</th></tr></thead>
-              <tbody>
-                {data.elevesNonSoldes.map((e) => (
-                  <tr key={e.id}>
-                    <td><code>{e.matricule}</code></td><td>{e.prenom} {e.nom}</td><td>{e.classe}</td>
-                    <td>{fmt(e.total_paye)}</td>
-                    <td><strong style={{ color: 'var(--danger)' }}>{fmt(e.frais_scolarite_total - e.total_paye)}</strong></td>
-                  </tr>
-                ))}
-                {data.elevesNonSoldes.length === 0 && <tr><td colSpan={5} className="text-center text-muted">Aucun élève.</td></tr>}
-              </tbody>
-            </table>
-          )}
+          <table>
+            <thead><tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Payé</th><th>Reste</th></tr></thead>
+            <tbody>
+              {activeTab.rows.map((e) => (
+                <tr key={e.id}>
+                  <td><code>{e.matricule}</code></td><td>{e.prenom} {e.nom}</td><td>{e.classe}</td>
+                  <td>{fmt(e.total_paye)}</td>
+                  <td><strong style={{ color: tab === 'soldes' ? 'var(--success)' : 'var(--danger)' }}>{fmt(Math.max(0, e.frais_scolarite_total - e.total_paye))}</strong></td>
+                </tr>
+              ))}
+              {activeTab.rows.length === 0 && <tr><td colSpan={5} className="text-center text-muted">Aucun élève.</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

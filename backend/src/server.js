@@ -17,6 +17,7 @@ const logsRoutes = require('./routes/logs');
 const profilRoutes = require('./routes/profil');
 const rapportsRoutes = require('./routes/rapports');
 const historiqueRoutes = require('./routes/historique');
+const rechercheRoutes = require('./routes/recherche');
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use('/api/logs', logsRoutes);
 app.use('/api/profil', profilRoutes);
 app.use('/api/rapports', rapportsRoutes);
 app.use('/api/historique', historiqueRoutes);
+app.use('/api/recherche', rechercheRoutes);
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {

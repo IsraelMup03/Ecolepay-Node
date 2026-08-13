@@ -59,6 +59,57 @@ router.get('/', async (req, res) => {
   res.json({ paiements: rows, total, somme, page, totalPages: Math.ceil(total / perPage) });
 });
 
+// GET /api/paiements/export.csv  (memes filtres que la liste, sans pagination)
+router.get('/export.csv', async (req, res) => {
+  try {
+    const { q, classe_id, debut, fin, type, statut = 'valide', annee } = req.query;
+    const anneeFiltre = annee || await getParam('annee_scolaire_courante');
+
+    const where = ['1=1'];
+    const params = [];
+    if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR p.reference LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
+    if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
+    if (anneeFiltre) { where.push('p.annee_scolaire=?'); params.push(anneeFiltre); }
+    if (debut) { where.push('DATE(p.date_paiement)>=?'); params.push(debut); }
+    if (fin) { where.push('DATE(p.date_paiement)<=?'); params.push(fin); }
+    if (type) { where.push('p.type_paiement=?'); params.push(type); }
+    if (statut) { where.push('p.statut=?'); params.push(statut); }
+    const whereStr = `WHERE ${where.join(' AND ')}`;
+
+    const [rows] = await db.query(
+      `SELECT p.reference, p.montant, p.devise, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
+              e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+       FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
+       LEFT JOIN utilisateurs u ON u.id=p.comptable_id
+       ${whereStr} ORDER BY p.date_paiement DESC`,
+      params
+    );
+
+    const total = rows.reduce((s, r) => s + parseFloat(r.montant_usd || 0), 0);
+    const meta = [
+      `# Rapport: Liste des paiements (année ${anneeFiltre})`,
+      `# Généré le: ${new Date().toLocaleString()}`,
+      `# Nombre: ${rows.length} · Total (USD): ${total.toFixed(2)}`,
+      '# Colonnes: Reference;Montant;Devise;Montant(USD);Type;Mode;Statut;Date;Matricule;Nom;Prenom;Classe;Encaisse par',
+    ];
+    const header = ['Reference', 'Montant', 'Devise', 'Montant(USD)', 'Type', 'Mode', 'Statut', 'Date', 'Matricule', 'Nom', 'Prenom', 'Classe', 'Encaisse par'];
+    const lines = [header.join(';')];
+    rows.forEach((p) => {
+      lines.push([
+        p.reference, p.montant, p.devise, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
+        p.matricule, p.nom, p.prenom, p.classe, p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '',
+      ].join(';'));
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
+    res.setHeader('Content-Disposition', `attachment; filename="paiements_${anneeFiltre}_${Date.now()}.csv"`);
+    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+  }
+});
+
 // GET /api/paiements/by-reference?ref=  (remplace api/get_paiement.php)
 router.get('/by-reference', async (req, res) => {
   const ref = (req.query.ref || '').trim();

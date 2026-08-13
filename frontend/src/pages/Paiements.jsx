@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import client from '../api/client.js';
+import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n, devise = 'USD') {
@@ -33,6 +33,22 @@ export default function Paiements() {
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, classeId, debut, fin, type, page, viewingAnnee]);
 
+  function exportCsv() {
+    const token = localStorage.getItem('ecolepay_token');
+    const params = { q, classe_id: classeId, type };
+    if (viewingAnnee) params.annee = viewingAnnee;
+    else { params.debut = debut; params.fin = fin; }
+    const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v))).toString();
+    fetch(`${API_URL}/paiements/export.csv?${qs}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => res.blob())
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'paiements.csv'; a.click();
+        window.URL.revokeObjectURL(url);
+      });
+  }
+
   return (
     <div>
       <div className="filters-bar">
@@ -60,6 +76,7 @@ export default function Paiements() {
             <div className="form-group"><input type="date" value={fin} onChange={(e) => { setFin(e.target.value); setPage(1); }} /></div>
           </>
         )}
+        <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-download-simple"></i> Exporter CSV</button>
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>

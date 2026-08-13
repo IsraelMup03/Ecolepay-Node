@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { API_URL } from '../api/client.js';
+import GlobalSearch from './GlobalSearch.jsx';
 
 const NAV_GROUPS = [
   { section: 'Général', railIcon: 'ph-bold ph-house', items: [
@@ -121,6 +122,7 @@ export default function Layout({ children }) {
               <h1>{title}</h1>
               <div className="subtitle">{subtitle}</div>
             </div>
+            <GlobalSearch />
             <div className="topbar-user">
               <div className="info">
                 <div><strong>{user?.prenom} {user?.nom}</strong></div>

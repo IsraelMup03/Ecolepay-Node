@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
   );
 
   // Recouvrement par classe (barres)
-  const classeFiltre = classe_id ? `AND c.id=${db.escape(classe_id)}` : '';
+  const classeFiltre = classe_id ? 'AND c.id=?' : '';
   const [parClasse] = await db.query(
     `SELECT c.id, c.nom as classe,
             COUNT(DISTINCT e.id) as nb_eleves,
@@ -42,7 +42,8 @@ router.get('/', async (req, res) => {
             SUM(CASE WHEN (SELECT COALESCE(SUM(p3.montant_usd),0) FROM paiements p3 WHERE p3.eleve_id=e.id AND p3.statut='valide' AND p3.annee_scolaire=e.annee_scolaire) >= e.frais_scolarite_total THEN 1 ELSE 0 END) as nb_soldes
      FROM classes c LEFT JOIN eleves e ON e.classe_id=c.id AND e.statut='actif'
      WHERE c.actif=1 ${classeFiltre}
-     GROUP BY c.id ORDER BY c.ordre ASC, c.nom ASC`
+     GROUP BY c.id ORDER BY c.ordre ASC, c.nom ASC`,
+    classe_id ? [classe_id] : []
   );
 
   // Repartition par mode de paiement (donut)
@@ -64,7 +65,8 @@ router.get('/', async (req, res) => {
 
   // Eleves soldes / non soldes (listes detaillees)
   const [elevesSoldes] = await db.query(
-    `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe
+    `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe, e.frais_scolarite_total,
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      WHERE e.statut='actif' ${classe_id ? 'AND e.classe_id=?' : ''}
      AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)
@@ -80,6 +82,9 @@ router.get('/', async (req, res) => {
      ORDER BY e.nom ASC`,
     classe_id ? [classe_id] : []
   );
+  // Parmi les non-soldes, distinguer ceux qui n'ont rien paye de ceux qui ont paye partiellement
+  const elevesPartiels = elevesNonSoldes.filter((e) => parseFloat(e.total_paye) > 0);
+  const elevesNonPayes = elevesNonSoldes.filter((e) => parseFloat(e.total_paye) <= 0);
 
   // Previsions financieres - 3 scenarios bases sur la moyenne mensuelle observee
   const moisEcoules = Math.max(1, mensuel.length);
@@ -105,6 +110,8 @@ router.get('/', async (req, res) => {
     genreParMois,
     elevesSoldes,
     elevesNonSoldes,
+    elevesPartiels,
+    elevesNonPayes,
     previsions,
     totalElevesActifs: totalElevesActifs[0].nb,
     classes,
@@ -131,11 +138,16 @@ router.get('/download/eleves.csv', async (req, res) => {
     const className = classe_id ? (classRows[0]?.nom || classe_id) : 'Toutes';
 
     const params = [];
+    const paidSub = `(SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)`;
     let statusCondition = '';
     if (status === 'solde') {
-      statusCondition = `AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)`;
+      statusCondition = `AND e.frais_scolarite_total <= ${paidSub}`;
     } else if (status === 'non_solde') {
-      statusCondition = `AND e.frais_scolarite_total > (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)`;
+      statusCondition = `AND e.frais_scolarite_total > ${paidSub}`;
+    } else if (status === 'partiel') {
+      statusCondition = `AND e.frais_scolarite_total > ${paidSub} AND ${paidSub} > 0`;
+    } else if (status === 'non_paye') {
+      statusCondition = `AND ${paidSub} <= 0`;
     }
     if (classe_id) params.push(classe_id);
 
@@ -152,7 +164,8 @@ router.get('/download/eleves.csv', async (req, res) => {
     );
 
     const meta = [];
-    meta.push(`# Rapport: Liste des élèves (${status === 'solde' ? 'Soldés' : status === 'non_solde' ? 'Non soldés' : 'Tous'})`);
+    const statusLabels = { solde: 'Soldés', non_solde: 'Non soldés', partiel: 'Partiels', non_paye: 'Non payés' };
+    meta.push(`# Rapport: Liste des élèves (${statusLabels[status] || 'Tous'})`);
     meta.push(`# Classe: ${className}`);
     meta.push(`# Généré le: ${new Date().toLocaleString()}`);
     meta.push('# Colonnes: Matricule;Nom;Prénom;Total payé;Reste;Date paiement;Perçu par;Classe');
@@ -175,6 +188,84 @@ router.get('/download/eleves.csv', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
     res.setHeader('Content-Disposition', `attachment; filename="eleves_${status || 'liste'}_${Date.now()}.csv"`);
     res.send('\uFEFF' + meta.join('\n') + '\n' + lines.join('\n'));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+  }
+});
+
+// GET /api/rapports/download/par-classe.csv?classe_id=
+router.get('/download/par-classe.csv', async (req, res) => {
+  try {
+    const { classe_id } = req.query;
+    const classeFiltre = classe_id ? 'AND c.id=?' : '';
+    const [rows] = await db.query(
+      `SELECT c.nom as classe,
+              COUNT(DISTINCT e.id) as nb_eleves,
+              COALESCE(SUM((SELECT COALESCE(SUM(p2.montant_usd),0) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.annee_scolaire=e.annee_scolaire)),0) as total_paye,
+              COALESCE(SUM(e.frais_scolarite_total),0) as total_attendu,
+              SUM(CASE WHEN (SELECT COALESCE(SUM(p3.montant_usd),0) FROM paiements p3 WHERE p3.eleve_id=e.id AND p3.statut='valide' AND p3.annee_scolaire=e.annee_scolaire) >= e.frais_scolarite_total THEN 1 ELSE 0 END) as nb_soldes
+       FROM classes c LEFT JOIN eleves e ON e.classe_id=c.id AND e.statut='actif'
+       WHERE c.actif=1 ${classeFiltre}
+       GROUP BY c.id ORDER BY c.ordre ASC, c.nom ASC`,
+      classe_id ? [classe_id] : []
+    );
+
+    const meta = [
+      '# Rapport: Recouvrement par classe',
+      `# Généré le: ${new Date().toLocaleString()}`,
+      '# Colonnes: Classe;Effectif;Payé(USD);Attendu(USD);% Recouvrement;Élèves soldés',
+    ];
+    const header = ['Classe', 'Effectif', 'Payé(USD)', 'Attendu(USD)', '% Recouvrement', 'Élèves soldés'];
+    const lines = [header.join(';')];
+    rows.forEach((r) => {
+      const pct = r.total_attendu > 0 ? Math.round((r.total_paye / r.total_attendu) * 1000) / 10 : 0;
+      lines.push([r.classe, r.nb_eleves, r.total_paye, r.total_attendu, pct, r.nb_soldes].join(';'));
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
+    res.setHeader('Content-Disposition', `attachment; filename="recouvrement_par_classe_${Date.now()}.csv"`);
+    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+  }
+});
+
+// GET /api/rapports/download/par-mode.csv?debut=&fin=&classe_id=
+router.get('/download/par-mode.csv', async (req, res) => {
+  try {
+    const { debut, fin, classe_id } = req.query;
+    const where = ["p.statut='valide'"];
+    const params = [];
+    if (debut) { where.push('DATE(p.date_paiement)>=?'); params.push(debut); }
+    if (fin) { where.push('DATE(p.date_paiement)<=?'); params.push(fin); }
+    if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
+    const whereStr = `WHERE ${where.join(' AND ')}`;
+
+    const [rows] = await db.query(
+      `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd) as total
+       FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}
+       GROUP BY p.mode_paiement`,
+      params
+    );
+    const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
+
+    const meta = [
+      '# Rapport: Répartition par mode de paiement',
+      `# Période: ${debut || 'début'} → ${fin || "aujourd'hui"}`,
+      `# Généré le: ${new Date().toLocaleString()}`,
+      '# Colonnes: Mode;Nombre de paiements;Total(USD)',
+    ];
+    const header = ['Mode', 'Nombre de paiements', 'Total(USD)'];
+    const lines = [header.join(';')];
+    rows.forEach((r) => {
+      lines.push([MODE_LABELS[r.mode_paiement] || r.mode_paiement, r.nb, r.total || 0].join(';'));
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
+    res.setHeader('Content-Disposition', `attachment; filename="repartition_par_mode_${Date.now()}.csv"`);
+    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
