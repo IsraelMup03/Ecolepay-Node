@@ -63,56 +63,77 @@ export default function Layout({ children }) {
   const { viewingAnnee, setViewingAnnee } = useAnnee();
   const location = useLocation();
   const [title, subtitle] = PAGE_TITLES[location.pathname] || ['EcolePay', ''];
-  const [manualSection, setManualSection] = useState(null);
-
-  useEffect(() => { setManualSection(null); }, [location.pathname]);
-
-  const initials = user ? `${(user.prenom || '')[0] || ''}${(user.nom || '')[0] || ''}`.toUpperCase() : '';
 
   const visibleGroups = NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((item) => (item.admin ? user?.role === 'admin' : item.perm ? hasPermission(item.perm) : true)) }))
     .filter((g) => g.items.length);
 
-  const activeIndex = manualSection !== null ? manualSection : findGroupIndex(visibleGroups, location.pathname);
-  const activeGroup = visibleGroups[activeIndex];
+  const [expanded, setExpanded] = useState(() => {
+    const idx = findGroupIndex(visibleGroups, location.pathname);
+    return new Set([visibleGroups[idx]?.section].filter(Boolean));
+  });
+
+  // Deplie automatiquement la section de la page active, sans jamais replier les autres.
+  useEffect(() => {
+    const idx = findGroupIndex(NAV_GROUPS, location.pathname);
+    const section = NAV_GROUPS[idx]?.section;
+    if (section) setExpanded((prev) => (prev.has(section) ? prev : new Set(prev).add(section)));
+  }, [location.pathname]);
+
+  function toggleSection(section) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section); else next.add(section);
+      return next;
+    });
+  }
+
+  const initials = user ? `${(user.prenom || '')[0] || ''}${(user.nom || '')[0] || ''}`.toUpperCase() : '';
 
   return (
     <div className="app-shell">
-      <aside className="nav-rail">
-        <NavLink to="/" className="nav-rail-logo">
-          {ecole?.logo ? (
-            <img src={`${API_URL.replace(/\/api$/, '')}/uploads/logos/${ecole.logo}`} alt="logo" className="nav-logo-img" />
-          ) : (
-            <i className="ph-fill ph-graduation-cap"></i>
-          )}
-        </NavLink>
-        <div className="nav-rail-groups">
-          {visibleGroups.map((g, i) => (
-            <button key={g.section} type="button" title={g.section} className={i === activeIndex ? 'nav-rail-btn active' : 'nav-rail-btn'} onClick={() => setManualSection(i)}>
-              <i className={g.railIcon}></i>
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      <aside className="nav-panel">
-        <div className="nav-panel-brand">
-          <div className="brand-icon"><i className="ph-fill ph-graduation-cap"></i></div>
-          <div className="name">{ecole?.nom || 'EcolePay'}</div>
-        </div>
-        {activeGroup && (
-          <div className="nav-panel-section">
-            <div className="nav-panel-label">{activeGroup.section}</div>
-            <nav className="nav-panel-nav">
-              {activeGroup.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}>
-                  <i className={item.icon}></i> {item.label}
-                </NavLink>
-              ))}
-            </nav>
+      <aside className="nav-sidebar">
+        <NavLink to="/" className="nav-sidebar-brand">
+          <div className="brand-icon-wrap">
+            {ecole?.logo ? (
+              <img src={`${API_URL.replace(/\/api$/, '')}/uploads/logos/${ecole.logo}`} alt="logo" className="nav-logo-img" />
+            ) : (
+              <i className="ph-fill ph-graduation-cap"></i>
+            )}
           </div>
-        )}
-        <div className="nav-panel-footer">{ecole?.nom || 'EcolePay'}</div>
+          <div className="name">{ecole?.nom || 'EcolePay'}</div>
+        </NavLink>
+
+        <nav className="nav-tree">
+          {visibleGroups.map((g) => {
+            const isExpanded = expanded.has(g.section);
+            return (
+              <div key={g.section} className="nav-tree-group">
+                <button
+                  type="button"
+                  className={isExpanded ? 'nav-tree-header expanded' : 'nav-tree-header'}
+                  onClick={() => toggleSection(g.section)}
+                  aria-expanded={isExpanded}
+                >
+                  <i className={g.railIcon}></i>
+                  <span>{g.section}</span>
+                  <i className="ph-bold ph-caret-right nav-tree-chevron"></i>
+                </button>
+                {isExpanded && (
+                  <div className="nav-tree-children">
+                    {g.items.map((item) => (
+                      <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}>
+                        <i className={item.icon}></i> {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="nav-sidebar-footer">Développé par FoxGroupe</div>
       </aside>
 
       <div className="main-area">
