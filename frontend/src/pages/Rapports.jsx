@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import client, { API_URL } from '../api/client.js';
+import { useAnnee } from '../context/AnneeContext.jsx';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 const COLORS = ['#059669', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626'];
@@ -20,6 +21,7 @@ function downloadCsv(path, params, filename) {
 }
 
 export default function Rapports() {
+  const { viewingAnnee } = useAnnee();
   const [classes, setClasses] = useState([]);
   const [classeId, setClasseId] = useState('');
   const [debut, setDebut] = useState('');
@@ -30,12 +32,15 @@ export default function Rapports() {
 
   async function load() {
     setLoading(true);
-    const res = await client.get('/rapports', { params: { classe_id: classeId, debut, fin } });
+    const params = { classe_id: classeId };
+    if (viewingAnnee) params.annee = viewingAnnee;
+    else { params.debut = debut; params.fin = fin; }
+    const res = await client.get('/rapports', { params });
     setData(res.data);
     setClasses(res.data.classes);
     setLoading(false);
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [classeId, debut, fin]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [classeId, debut, fin, viewingAnnee]);
 
   if (loading && !data) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement des rapports...</p></div>;
   if (!data) return null;
@@ -52,8 +57,12 @@ export default function Rapports() {
   return (
     <div>
       <div className="filters-bar">
-        <div className="form-group"><input type="date" value={debut} onChange={(e) => setDebut(e.target.value)} /></div>
-        <div className="form-group"><input type="date" value={fin} onChange={(e) => setFin(e.target.value)} /></div>
+        {!viewingAnnee && (
+          <>
+            <div className="form-group"><input type="date" value={debut} onChange={(e) => setDebut(e.target.value)} /></div>
+            <div className="form-group"><input type="date" value={fin} onChange={(e) => setFin(e.target.value)} /></div>
+          </>
+        )}
         <div className="form-group">
           <select value={classeId} onChange={(e) => setClasseId(e.target.value)}>
             <option value="">Toutes les classes</option>
@@ -65,7 +74,7 @@ export default function Rapports() {
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card">
           <div className="stat-icon blue"><i className="ph ph-currency-circle-dollar"></i></div>
-          <div className="stat-info"><div className="label">Total encaissé (période)</div><div className="value">{fmt(data.resume.total_usd)}</div></div>
+          <div className="stat-info"><div className="label">Total encaissé {viewingAnnee ? `(${viewingAnnee})` : '(période)'}</div><div className="value">{fmt(data.resume.total_usd)}</div></div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><i className="ph ph-list-checks"></i></div>
@@ -97,7 +106,7 @@ export default function Rapports() {
           <div className="card-header">
             <i className="ph ph-chart-donut"></i><h3>Répartition par mode de paiement</h3>
             <div className="card-actions">
-              <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/par-mode.csv', { debut, fin, classe_id: classeId }, 'repartition_par_mode.csv')}>
+              <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/par-mode.csv', { debut, fin, classe_id: classeId, annee: viewingAnnee }, 'repartition_par_mode.csv')}>
                 <i className="ph ph-download-simple"></i> Télécharger
               </button>
             </div>
@@ -120,7 +129,7 @@ export default function Rapports() {
         <div className="card-header">
           <i className="ph ph-chart-bar"></i><h3>Recouvrement par classe</h3>
           <div className="card-actions">
-            <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/par-classe.csv', { classe_id: classeId }, 'recouvrement_par_classe.csv')}>
+            <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/par-classe.csv', { classe_id: classeId, annee: viewingAnnee }, 'recouvrement_par_classe.csv')}>
               <i className="ph ph-download-simple"></i> Télécharger
             </button>
           </div>
@@ -140,6 +149,7 @@ export default function Rapports() {
         </div>
       </div>
 
+      {!viewingAnnee && (
       <div className="card mb-16">
         <div className="card-header"><i className="ph ph-sparkle"></i><h3>Prévisions financières (6 prochains mois)</h3></div>
         <div className="card-body">
@@ -151,6 +161,7 @@ export default function Rapports() {
           <p className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Estimation basée sur la moyenne mensuelle observée sur la période sélectionnée.</p>
         </div>
       </div>
+      )}
 
       <div className="card">
         <div className="flex-between" style={{ padding: '14px 18px 0' }}>
@@ -159,7 +170,7 @@ export default function Rapports() {
               <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{t.label} ({t.rows.length})</button>
             ))}
           </div>
-          <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/eleves.csv', { classe_id: classeId, status: activeTab.status }, `eleves_${activeTab.status}.csv`)}>
+          <button className="btn btn-outline btn-sm" onClick={() => downloadCsv('/rapports/download/eleves.csv', { classe_id: classeId, status: activeTab.status, annee: viewingAnnee }, `eleves_${activeTab.status}.csv`)}>
             <i className="ph ph-download-simple"></i> Télécharger cette liste
           </button>
         </div>

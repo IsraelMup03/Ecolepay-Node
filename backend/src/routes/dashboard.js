@@ -80,10 +80,10 @@ router.get('/', async (req, res) => {
     "SELECT COALESCE(SUM(montant_usd),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
   );
   const [[{ paiementsAujourdhui }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as paiementsAujourdhui FROM paiements WHERE DATE(date_paiement)=CURDATE() AND statut='valide'"
+    "SELECT COALESCE(SUM(montant_usd),0) as paiementsAujourdhui FROM paiements WHERE DATE(date_paiement)=CURDATE() AND statut='valide' AND annee_scolaire=?", [annee]
   );
   const [[{ paiementsMois }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as paiementsMois FROM paiements WHERE MONTH(date_paiement)=MONTH(CURDATE()) AND YEAR(date_paiement)=YEAR(CURDATE()) AND statut='valide'"
+    "SELECT COALESCE(SUM(montant_usd),0) as paiementsMois FROM paiements WHERE MONTH(date_paiement)=MONTH(CURDATE()) AND YEAR(date_paiement)=YEAR(CURDATE()) AND statut='valide' AND annee_scolaire=?", [annee]
   );
   const [[{ totalAttendu }]] = await db.query(
     "SELECT COALESCE(SUM(frais_scolarite_total),0) as totalAttendu FROM eleves WHERE statut='actif' AND annee_scolaire=?", [annee]
@@ -113,10 +113,10 @@ router.get('/', async (req, res) => {
   );
 
   const [[{ payF }]] = await db.query(
-    "SELECT COALESCE(SUM(p.montant_usd),0) as payF FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='F' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide'"
+    "SELECT COALESCE(SUM(p.montant_usd),0) as payF FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='F' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide' AND p.annee_scolaire=?", [annee]
   );
   const [[{ payM }]] = await db.query(
-    "SELECT COALESCE(SUM(p.montant_usd),0) as payM FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='M' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide'"
+    "SELECT COALESCE(SUM(p.montant_usd),0) as payM FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='M' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide' AND p.annee_scolaire=?", [annee]
   );
 
   const [derniers] = await db.query(

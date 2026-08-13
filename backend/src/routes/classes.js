@@ -6,9 +6,31 @@ const { logActivite, envoyerCorbeille, getEcole, getParam } = require('../utils/
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/classes  (liste simple, utilisee dans les selects)
+// GET /api/classes?all=&annee=  (annee: consulter une annee archivee)
 router.get('/', async (req, res) => {
-  const { all } = req.query;
+  const { all, annee } = req.query;
+
+  if (annee) {
+    const anneeCourante = await getParam('annee_scolaire_courante');
+    if (annee !== anneeCourante) {
+      // Les classes ne sont pas versionnees par annee : on derive la liste "de cette
+      // annee-la" des elleves qui y etaient archives, pour rester coherent avec le
+      // Dashboard/Historique qui comptent les classes de la meme facon.
+      const [rows] = await db.query(
+        `SELECT c.id, c.nom, c.devise, c.ordre, c.frais_scolarite, c.frais_inscription, c.effectif_max, c.classe_superieure_id,
+                COUNT(a.id) as nb_eleves_annee
+         FROM archives_annuelles a
+         JOIN classes c ON c.id = a.classe_id
+         WHERE a.annee_scolaire = ?
+         GROUP BY c.id
+         ORDER BY c.ordre ASC, c.nom ASC`,
+        [annee]
+      );
+      return res.json(rows.map((r) => ({ ...r, archive: true })));
+    }
+    // Annee courante non encore archivee -> la liste live ci-dessous est deja correcte.
+  }
+
   const where = all ? '' : 'WHERE actif=1';
   const [rows] = await db.query(`SELECT * FROM classes ${where} ORDER BY ordre ASC, nom ASC`);
   res.json(rows);

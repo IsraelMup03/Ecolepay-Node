@@ -67,6 +67,14 @@ export default function Paiements() {
             <option value="">Tous types</option>
             <option value="scolarite">Scolarité</option>
             <option value="inscription">Inscription</option>
+            <option value="uniforme">Uniforme scolaire</option>
+            <option value="fournitures">Fournitures scolaires</option>
+            <option value="cantine">Cantine / Restauration</option>
+            <option value="transport">Transport scolaire</option>
+            <option value="excursion">Excursion / Sortie</option>
+            <option value="examen">Frais d'examen</option>
+            <option value="assurance">Assurance scolaire</option>
+            <option value="activites">Activités parascolaires</option>
             <option value="autre">Autre</option>
           </select>
         </div>

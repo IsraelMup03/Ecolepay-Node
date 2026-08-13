@@ -55,9 +55,10 @@ async function logActivite(userId, action, details, ip) {
 async function envoyerCorbeille(table, data, userId) {
   const delaiJours = parseInt(await getParam('delai_corbeille', '30'), 10);
   const exp = new Date(Date.now() + delaiJours * 24 * 60 * 60 * 1000);
+  const expStr = exp.toISOString().slice(0, 19).replace('T', ' ');
   await db.query(
     'INSERT INTO corbeille (table_source, donnees, supprime_par, date_expiration) VALUES (?,?,?,?)',
-    [table, JSON.stringify(data), userId || null, exp]
+    [table, JSON.stringify(data), userId || null, expStr]
   );
 }
 

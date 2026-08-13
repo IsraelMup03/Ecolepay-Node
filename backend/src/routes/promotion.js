@@ -60,30 +60,33 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
       }
     }
 
-    // 2. Promouvoir les eleves actifs ayant une classe superieure
-    const [elevesProm] = await conn.query(
+    // 2. Determiner promotion vs diplome a partir de la classe D'ORIGINE (avant toute
+    // mutation) : sinon un eleve promu dans une classe terminale se ferait immediatement
+    // re-detecter comme "en classe terminale" et diplome a tort la meme execution.
+    const [elevesClasses] = await conn.query(
       `SELECT e.id, c.classe_superieure_id, cs.frais_scolarite as new_frais_s, cs.frais_inscription as new_frais_i
        FROM eleves e
        JOIN classes c ON c.id=e.classe_id
-       JOIN classes cs ON cs.id=c.classe_superieure_id
-       WHERE e.statut='actif' AND c.classe_superieure_id IS NOT NULL`
+       LEFT JOIN classes cs ON cs.id=c.classe_superieure_id
+       WHERE e.statut='actif'`
     );
     let nbPromus = 0;
-    for (const ep of elevesProm) {
-      await conn.query(
-        `UPDATE eleves SET classe_id=?, statut='actif', annee_scolaire=?, frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
-        [ep.classe_superieure_id, nouvelle_annee, ep.new_frais_s, ep.new_frais_i, ep.id]
-      );
-      nbPromus++;
+    let nbDiplomes = 0;
+    for (const ec of elevesClasses) {
+      if (ec.classe_superieure_id) {
+        await conn.query(
+          `UPDATE eleves SET classe_id=?, statut='actif', annee_scolaire=?, frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
+          [ec.classe_superieure_id, nouvelle_annee, ec.new_frais_s, ec.new_frais_i, ec.id]
+        );
+        nbPromus++;
+      } else {
+        await conn.query(
+          `UPDATE eleves SET statut='diplome', annee_scolaire=? WHERE id=?`,
+          [nouvelle_annee, ec.id]
+        );
+        nbDiplomes++;
+      }
     }
-
-    // 3. Eleves en classe terminale (pas de classe superieure) -> diplomes
-    const [diplomesResult] = await conn.query(
-      `UPDATE eleves SET statut='diplome', annee_scolaire=?
-       WHERE statut='actif' AND classe_id IN (SELECT id FROM classes WHERE classe_superieure_id IS NULL)`,
-      [nouvelle_annee]
-    );
-    const nbDiplomes = diplomesResult.affectedRows;
 
     // 4. Mettre a jour l'annee scolaire courante
     await conn.query("UPDATE parametres SET valeur=? WHERE cle='annee_scolaire_courante'", [nouvelle_annee]);

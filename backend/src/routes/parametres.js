@@ -79,14 +79,12 @@ router.post('/reinitialiser', requireAdmin, async (req, res) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    await conn.query('SET FOREIGN_KEY_CHECKS=0');
-    await conn.query('TRUNCATE TABLE remboursements');
-    await conn.query('TRUNCATE TABLE paiements');
-    await conn.query('TRUNCATE TABLE archives_annuelles');
-    await conn.query('TRUNCATE TABLE eleves');
-    await conn.query('TRUNCATE TABLE classes');
-    await conn.query('TRUNCATE TABLE corbeille');
-    await conn.query('SET FOREIGN_KEY_CHECKS=1');
+    await conn.query('DELETE FROM remboursements');
+    await conn.query('DELETE FROM paiements');
+    await conn.query('DELETE FROM archives_annuelles');
+    await conn.query('DELETE FROM eleves');
+    await conn.query('DELETE FROM classes');
+    await conn.query('DELETE FROM corbeille');
     await conn.commit();
     await logActivite(req.user.id, 'Application reinitialisee', 'Suppression definitive: eleves, classes, paiements', req.ip);
     res.json({ success: true });

@@ -27,11 +27,11 @@ router.post('/:id/restaurer', async (req, res) => {
   const data = JSON.parse(item.donnees);
 
   if (item.table_source === 'eleves') {
-    data.statut = 'actif';
-    delete data.id;
-    const cols = Object.keys(data);
-    const placeholders = cols.map(() => '?').join(',');
-    await db.query(`INSERT INTO eleves (${cols.join(',')}) VALUES (${placeholders})`, Object.values(data));
+    // La suppression d'un eleve est un soft-delete (statut='transfere'), la ligne
+    // n'a jamais quitte la table : il faut donc remettre le statut, pas re-inserer
+    // (une re-insertion entrerait en collision avec le matricule, deja pris par la
+    // ligne existante, et ferait planter tout le serveur via une exception non geree).
+    await db.query("UPDATE eleves SET statut='actif' WHERE id=?", [data.id]);
     await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);
     await logActivite(req.user.id, 'Eleve restaure', `Corbeille ID:${id}`, req.ip);
     return res.json({ success: true, message: 'Eleve restaure avec succes.' });

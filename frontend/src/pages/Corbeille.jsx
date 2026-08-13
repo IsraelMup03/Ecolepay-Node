@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 const TABLE_LABELS = { eleves: 'Élève', classes: 'Classe', utilisateurs: 'Utilisateur' };
 
@@ -40,16 +39,19 @@ export default function Corbeille() {
     } catch (e) { return '—'; }
   }
 
-  if (viewingAnnee) return <HistoricalBlock />;
-
   return (
     <div>
-      <div className="alert alert-info"><i className="ph ph-info"></i> Les éléments sont conservés 30 jours avant suppression définitive automatique.</div>
+      <div className="alert alert-info">
+        <i className="ph ph-info"></i>
+        {viewingAnnee
+          ? " Vous consultez la corbeille en lecture seule (elle n'est pas propre à une année scolaire). Revenez à l'année en cours pour restaurer ou supprimer un élément."
+          : ' Les éléments sont conservés 30 jours avant suppression définitive automatique.'}
+      </div>
 
       <div className="card">
         <div className="table-container">
           <table>
-            <thead><tr><th>Type</th><th>Aperçu</th><th>Supprimé par</th><th>Date de suppression</th><th>Expire le</th><th></th></tr></thead>
+            <thead><tr><th>Type</th><th>Aperçu</th><th>Supprimé par</th><th>Date de suppression</th><th>Expire le</th>{!viewingAnnee && <th></th>}</tr></thead>
             <tbody>
               {loading && <tr><td colSpan={6}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && rows.length === 0 && <tr><td colSpan={6}><div className="empty-state"><i className="ph ph-trash"></i><h3>Corbeille vide</h3></div></td></tr>}
@@ -60,10 +62,12 @@ export default function Corbeille() {
                   <td className="text-muted">{r.supp_prenom} {r.supp_nom}</td>
                   <td className="text-muted">{new Date(r.date_suppression).toLocaleDateString('fr-FR')}</td>
                   <td className="text-muted">{new Date(r.date_expiration).toLocaleDateString('fr-FR')}</td>
-                  <td className="flex gap-8">
-                    <button className="btn btn-success btn-sm" onClick={() => restaurer(r.id)}><i className="ph ph-arrow-u-up-left"></i> Restaurer</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => supprimer(r.id)}><i className="ph ph-trash"></i></button>
-                  </td>
+                  {!viewingAnnee && (
+                    <td className="flex gap-8">
+                      <button className="btn btn-success btn-sm" onClick={() => restaurer(r.id)}><i className="ph ph-arrow-u-up-left"></i> Restaurer</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(r.id)}><i className="ph ph-trash"></i></button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

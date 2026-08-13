@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import HistoricalBlock from '../components/HistoricalBlock.jsx';
+import RowMenu from '../components/RowMenu.jsx';
 
 const empty = { nom: '', prenom: '', email: '', role: 'comptable', telephone: '', permissions: [] };
 
@@ -79,6 +80,20 @@ export default function Utilisateurs() {
     }
   }
 
+  async function activer(u) {
+    let perms = {};
+    try { perms = JSON.parse(u.permissions || '{}'); } catch (e) { /* noop */ }
+    try {
+      await client.put(`/utilisateurs/${u.id}`, {
+        nom: u.nom, prenom: u.prenom, role: u.role, telephone: u.telephone || '',
+        permissions: Object.keys(perms).filter((k) => perms[k]), actif: 1,
+      });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
   if (viewingAnnee) return <HistoricalBlock />;
 
   return (
@@ -102,10 +117,21 @@ export default function Utilisateurs() {
                   <td><span className="badge badge-info">{u.role}</span></td>
                   <td><span className={`badge ${u.actif ? 'badge-success' : 'badge-default'}`}>{u.actif ? 'Actif' : 'Désactivé'}</span></td>
                   <td className="text-muted">{u.derniere_connexion ? new Date(u.derniere_connexion).toLocaleString('fr-FR') : 'Jamais'}</td>
-                  <td className="flex gap-8">
-                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(u)}><i className="ph ph-pencil-simple"></i></button>
-                    <button className="btn btn-warning btn-sm" onClick={() => reinitMdp(u)}><i className="ph ph-key"></i></button>
-                    {u.actif ? <button className="btn btn-danger btn-sm" onClick={() => desactiver(u)}><i className="ph ph-user-minus"></i></button> : null}
+                  <td>
+                    <RowMenu>
+                      {(close) => (
+                        <>
+                          <button onClick={() => { openEdit(u); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
+                          <button onClick={() => { reinitMdp(u); close(); }}><i className="ph ph-key"></i> Réinitialiser le mot de passe</button>
+                          <div className="row-menu-divider"></div>
+                          {u.actif ? (
+                            <button className="danger" onClick={() => { desactiver(u); close(); }}><i className="ph ph-user-minus"></i> Désactiver</button>
+                          ) : (
+                            <button onClick={() => { activer(u); close(); }}><i className="ph ph-user-check"></i> Activer</button>
+                          )}
+                        </>
+                      )}
+                    </RowMenu>
                   </td>
                 </tr>
               ))}

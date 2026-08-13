@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
-import HistoricalBlock from '../components/HistoricalBlock.jsx';
 
 function fmt(n, devise = 'USD') {
   return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
@@ -22,11 +21,11 @@ export default function Remboursements() {
 
   async function load() {
     setLoading(true);
-    const res = await client.get('/remboursements');
+    const res = await client.get('/remboursements', { params: viewingAnnee ? { annee: viewingAnnee } : {} });
     setRows(res.data);
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [viewingAnnee]);
 
   async function chercherPaiement() {
     setError('');
@@ -64,19 +63,17 @@ export default function Remboursements() {
     load();
   }
 
-  if (viewingAnnee) return <HistoricalBlock />;
-
   return (
     <div>
       <div className="flex-between mb-16">
-        <div className="text-muted">{rows.length} demande(s) de remboursement</div>
-        <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Nouvelle demande</button>
+        <div className="text-muted">{rows.length} demande(s) de remboursement{viewingAnnee ? ` — ${viewingAnnee}` : ''}</div>
+        {!viewingAnnee && <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Nouvelle demande</button>}
       </div>
 
       <div className="card">
         <div className="table-container">
           <table>
-            <thead><tr><th>Référence</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th>{user.role === 'admin' && <th></th>}</tr></thead>
+            <thead><tr><th>Référence</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th>{!viewingAnnee && user.role === 'admin' && <th></th>}</tr></thead>
             <tbody>
               {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && rows.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-arrow-counter-clockwise"></i><h3>Aucune demande</h3></div></td></tr>}
@@ -89,7 +86,7 @@ export default function Remboursements() {
                   <td className="text-muted">{r.motif}</td>
                   <td><span className={`badge ${r.statut === 'approuve' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{r.statut}</span></td>
                   <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
-                  {user.role === 'admin' && (
+                  {!viewingAnnee && user.role === 'admin' && (
                     <td className="flex gap-8">
                       {r.statut === 'en_attente' && (
                         <>

@@ -17,6 +17,9 @@ export default function Eleves() {
   const [q, setQ] = useState('');
   const [classeId, setClasseId] = useState('');
   const [statut, setStatut] = useState('actif');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ nom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
@@ -25,18 +28,21 @@ export default function Eleves() {
 
   async function loadEleves() {
     setLoading(true);
-    const params = viewingAnnee ? { q, classe_id: classeId, annee: viewingAnnee } : { q, classe_id: classeId, statut };
+    const params = viewingAnnee ? { q, classe_id: classeId, annee: viewingAnnee, page } : { q, classe_id: classeId, statut, page };
     const res = await client.get('/eleves', { params });
-    setEleves(res.data);
+    setEleves(res.data.rows);
+    setTotal(res.data.total);
+    setTotalPages(res.data.totalPages);
     setLoading(false);
   }
 
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
+  useEffect(() => { setPage(1); }, [q, classeId, statut, viewingAnnee]);
   useEffect(() => {
     const t = setTimeout(loadEleves, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line
-  }, [q, classeId, statut, viewingAnnee]);
+  }, [q, classeId, statut, viewingAnnee, page]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -131,6 +137,13 @@ export default function Eleves() {
             </tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div className="pagination">
+            <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Précédent</button>
+            <span className="text-muted" style={{ padding: '6px 10px' }}>Page {page} / {totalPages} ({total} élèves)</span>
+            <button className="btn btn-outline btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Suivant</button>
+          </div>
+        )}
       </div>
 
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>

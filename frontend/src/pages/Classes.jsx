@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
+import RowMenu from '../components/RowMenu.jsx';
 
 function fmt(n) { return (parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -19,11 +20,12 @@ export default function Classes() {
 
   async function load() {
     setLoading(true);
-    const res = await client.get('/classes', { params: { all: 1 } });
+    const params = viewingAnnee ? { all: 1, annee: viewingAnnee } : { all: 1 };
+    const res = await client.get('/classes', { params });
     setClasses(res.data);
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [viewingAnnee]);
 
   function openNew() { setEditing(null); setForm(empty); setError(''); setShowModal(true); }
   function openEdit(c) {
@@ -51,10 +53,28 @@ export default function Classes() {
     }
   }
 
-  async function archiver(c) {
-    if (!window.confirm(`Archiver la classe "${c.nom}" ?`)) return;
+  async function supprimer(c) {
+    if (!window.confirm(`Supprimer la classe "${c.nom}" ? Elle sera déplacée vers la corbeille et pourra être restaurée pendant 30 jours.`)) return;
     try {
       await client.delete(`/classes/${c.id}`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
+  async function toggleActif(c) {
+    try {
+      await client.put(`/classes/${c.id}`, {
+        nom: c.nom,
+        frais_scolarite: c.frais_scolarite,
+        frais_inscription: c.frais_inscription,
+        classe_superieure_id: c.classe_superieure_id || '',
+        classe_inferieure_id: c.classe_inferieure_id || '',
+        effectif_max: c.effectif_max,
+        ordre: c.ordre,
+        actif: c.actif ? 0 : 1,
+      });
       load();
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur.');
@@ -95,14 +115,16 @@ export default function Classes() {
   return (
     <div>
       <div className="flex-between mb-16">
-        <div className="text-muted">{classes.filter((c) => c.actif).length} classe(s) active(s)</div>
+        <div className="text-muted">
+          {viewingAnnee ? `${classes.length} classe(s) avec des élèves en ${viewingAnnee}` : `${classes.filter((c) => c.actif).length} classe(s) active(s)`}
+        </div>
         {!viewingAnnee && <button className="btn btn-accent" onClick={openNew}><i className="ph ph-plus"></i> Nouvelle classe</button>}
       </div>
 
       <div className="card">
         <div className="table-container">
           <table>
-            <thead><tr><th>Ordre</th><th>Nom</th><th>Frais scolarité</th><th>Frais inscription</th><th>Effectif max</th><th>Classe suivante</th><th>Statut</th><th></th></tr></thead>
+            <thead><tr><th>Ordre</th><th>Nom</th><th>Frais scolarité</th><th>Frais inscription</th><th>Effectif max</th><th>Classe suivante</th><th>{viewingAnnee ? 'Élèves cette année' : 'Statut'}</th><th></th></tr></thead>
             <tbody>
               {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && classes.map((c) => (
@@ -118,10 +140,26 @@ export default function Classes() {
                   <td>{fmt(c.frais_inscription)} {c.devise}</td>
                   <td>{c.effectif_max}</td>
                   <td className="text-muted">{classes.find((x) => x.id === c.classe_superieure_id)?.nom || '—'}</td>
-                  <td><span className={`badge ${c.actif ? 'badge-success' : 'badge-default'}`}>{c.actif ? 'Active' : 'Archivée'}</span></td>
-                  <td className="flex gap-8">
-                    {!viewingAnnee && <button className="btn btn-outline btn-sm" onClick={() => openEdit(c)}><i className="ph ph-pencil-simple"></i></button>}
-                    {!viewingAnnee && c.actif ? <button className="btn btn-danger btn-sm" onClick={() => archiver(c)}><i className="ph ph-archive"></i></button> : null}
+                  <td>
+                    {viewingAnnee
+                      ? <span className="badge badge-info">{c.nb_eleves_annee} élève(s)</span>
+                      : <span className={`badge ${c.actif ? 'badge-success' : 'badge-default'}`}>{c.actif ? 'Active' : 'Archivée'}</span>}
+                  </td>
+                  <td>
+                    {!viewingAnnee && (
+                      <RowMenu>
+                        {(close) => (
+                          <>
+                            <button onClick={() => { openEdit(c); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
+                            <button onClick={() => { toggleActif(c); close(); }}>
+                              <i className={c.actif ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {c.actif ? 'Désactiver' : 'Activer'}
+                            </button>
+                            <div className="row-menu-divider"></div>
+                            <button className="danger" onClick={() => { supprimer(c); close(); }}><i className="ph ph-trash"></i> Supprimer</button>
+                          </>
+                        )}
+                      </RowMenu>
+                    )}
                   </td>
                 </tr>
               ))}

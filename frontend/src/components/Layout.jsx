@@ -47,7 +47,15 @@ const PAGE_TITLES = {
   '/corbeille': ['Corbeille', 'Données récupérables (30 jours)'],
   '/logs': ["Journal d'activité", 'Historique des actions'],
   '/profil': ['Mon profil', 'Informations personnelles'],
+  '/eleves/': ['Fiche élève', 'Détails et paiements'],
+  '/classes/': ['Détails de la classe', 'Élèves et recouvrement'],
 };
+
+function findTitle(pathname) {
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+  const prefixMatch = Object.keys(PAGE_TITLES).find((k) => k.length > 1 && k.endsWith('/') && pathname.startsWith(k));
+  return prefixMatch ? PAGE_TITLES[prefixMatch] : ['EcolePay', ''];
+}
 
 function findGroupIndex(groups, pathname) {
   for (let i = 0; i < groups.length; i++) {
@@ -62,7 +70,7 @@ export default function Layout({ children }) {
   const { user, logout, hasPermission, ecole } = useAuth();
   const { viewingAnnee, setViewingAnnee } = useAnnee();
   const location = useLocation();
-  const [title, subtitle] = PAGE_TITLES[location.pathname] || ['EcolePay', ''];
+  const [title, subtitle] = findTitle(location.pathname);
 
   const visibleGroups = NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((item) => (item.admin ? user?.role === 'admin' : item.perm ? hasPermission(item.perm) : true)) }))

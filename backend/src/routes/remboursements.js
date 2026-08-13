@@ -1,15 +1,16 @@
 const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
-const { genererReferenceRemboursement, logActivite } = require('../utils/helpers');
+const { genererReferenceRemboursement, logActivite, getParam } = require('../utils/helpers');
 
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/remboursements
+// GET /api/remboursements?annee=  (par defaut: annee scolaire en cours)
 router.get('/', async (req, res) => {
+  const anneeFiltre = req.query.annee || await getParam('annee_scolaire_courante');
   const [rows] = await db.query(
-    `SELECT r.*, p.reference as pay_ref, p.montant as pay_montant, p.devise as pay_devise,
+    `SELECT r.*, p.reference as pay_ref, p.montant as pay_montant, p.devise as pay_devise, p.annee_scolaire,
             e.nom, e.prenom, e.matricule, c.nom as classe,
             u.prenom as approv_prenom, u.nom as approv_nom
      FROM remboursements r
@@ -17,7 +18,9 @@ router.get('/', async (req, res) => {
      JOIN eleves e ON e.id=r.eleve_id
      JOIN classes c ON c.id=e.classe_id
      LEFT JOIN utilisateurs u ON u.id=r.approuve_par
-     ORDER BY r.date_remboursement DESC`
+     WHERE p.annee_scolaire=?
+     ORDER BY r.date_remboursement DESC`,
+    [anneeFiltre]
   );
   res.json(rows);
 });

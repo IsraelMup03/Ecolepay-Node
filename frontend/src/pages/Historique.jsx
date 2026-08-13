@@ -12,7 +12,7 @@ const STATUT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_pay
 
 export default function Historique() {
   const navigate = useNavigate();
-  const { setViewingAnnee } = useAnnee();
+  const { viewingAnnee, setViewingAnnee } = useAnnee();
   const [annees, setAnnees] = useState([]);
   const [anneeCourante, setAnneeCourante] = useState(null);
   const [annee, setAnnee] = useState(null);
@@ -24,8 +24,10 @@ export default function Historique() {
     client.get('/historique/annees').then((res) => {
       setAnnees(res.data.annees);
       setAnneeCourante(res.data.anneeCourante);
-      setAnnee(res.data.annees[0] || res.data.anneeCourante);
+      // Si on est deja en mode historique (bandeau actif), on ouvre directement sur cette annee-la.
+      setAnnee(viewingAnnee || res.data.annees[0] || res.data.anneeCourante);
     });
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {

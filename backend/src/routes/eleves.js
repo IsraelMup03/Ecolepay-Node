@@ -6,9 +6,12 @@ const { genererMatricule, logActivite, envoyerCorbeille, getParam } = require('.
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/eleves?classe_id=&q=&statut=&annee=  (annee: consulter une annee archivee)
+// GET /api/eleves?classe_id=&q=&statut=&annee=&page=&limit=  (annee: consulter une annee archivee)
 router.get('/', async (req, res) => {
   const { classe_id, q, statut = 'actif', annee } = req.query;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const offset = (page - 1) * limit;
 
   if (annee) {
     const [[{ cnt }]] = await db.query('SELECT COUNT(*) as cnt FROM archives_annuelles WHERE annee_scolaire=?', [annee]);
@@ -17,6 +20,10 @@ router.get('/', async (req, res) => {
       const paramsA = [annee];
       if (classe_id) { whereA.push('a.classe_id=?'); paramsA.push(classe_id); }
       if (q) { whereA.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); paramsA.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+      const [[{ total }]] = await db.query(
+        `SELECT COUNT(*) as total FROM archives_annuelles a JOIN eleves e ON e.id=a.eleve_id WHERE ${whereA.join(' AND ')}`,
+        paramsA
+      );
       const [rows] = await db.query(
         `SELECT e.id, e.matricule, e.nom, e.prenom, e.genre, a.classe_id, c.nom as classe_nom,
                 a.frais_scolarite_total, a.total_paye, a.statut_paiement
@@ -24,10 +31,10 @@ router.get('/', async (req, res) => {
          JOIN eleves e ON e.id=a.eleve_id
          LEFT JOIN classes c ON c.id=a.classe_id
          WHERE ${whereA.join(' AND ')}
-         ORDER BY e.nom ASC, e.prenom ASC`,
-        paramsA
+         ORDER BY e.nom ASC, e.prenom ASC LIMIT ? OFFSET ?`,
+        [...paramsA, limit, offset]
       );
-      return res.json(rows.map((r) => ({ ...r, archive: true })));
+      return res.json({ rows: rows.map((r) => ({ ...r, archive: true })), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
     }
     // Annee non encore archivee (= annee courante) -> la requete live ci-dessous reflete deja cette annee.
   }
@@ -39,14 +46,15 @@ router.get('/', async (req, res) => {
   if (statut) { where.push('e.statut=?'); params.push(statut); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
+  const [[{ total }]] = await db.query(`SELECT COUNT(*) as total FROM eleves e ${whereStr}`, params);
   const [rows] = await db.query(
     `SELECT e.*, c.nom as classe_nom,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
-     ${whereStr} ORDER BY e.nom ASC, e.prenom ASC`,
-    params
+     ${whereStr} ORDER BY e.nom ASC, e.prenom ASC LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
   );
-  res.json(rows);
+  res.json({ rows, total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
 });
 
 // GET /api/eleves/search?q=  (recherche instantanee - remplace api/search_eleve.php)

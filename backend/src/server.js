@@ -19,6 +19,17 @@ const rapportsRoutes = require('./routes/rapports');
 const historiqueRoutes = require('./routes/historique');
 const rechercheRoutes = require('./routes/recherche');
 
+// Filet de securite : une exception non geree dans une route async ne doit jamais
+// arreter tout le serveur (nodemon ne redemarre pas automatiquement apres un crash,
+// ce qui bloquerait l'application entiere pour tous les utilisateurs jusqu'a
+// intervention manuelle). On journalise et on continue.
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection (requete ignoree, serveur maintenu en vie):', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException (serveur maintenu en vie):', err);
+});
+
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
