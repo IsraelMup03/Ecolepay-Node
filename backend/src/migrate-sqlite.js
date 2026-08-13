@@ -92,6 +92,7 @@ async function main() {
       email_parent TEXT,
       adresse TEXT,
       statut TEXT DEFAULT 'actif',
+      redoublant INTEGER DEFAULT 0,
       date_inscription DATE,
       annee_scolaire TEXT,
       frais_scolarite_total NUMERIC DEFAULT 0.00,

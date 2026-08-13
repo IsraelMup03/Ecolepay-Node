@@ -3,9 +3,12 @@ import { Link } from 'react-router-dom';
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import RowMenu from '../components/RowMenu.jsx';
 
 const STATUT_PAIEMENT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
 const STATUT_PAIEMENT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
+const STATUT_BADGE = { actif: 'badge-success', suspendu: 'badge-danger', diplome: 'badge-info', transfere: 'badge-default' };
+const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplômé', transfere: 'Transféré' };
 
 export default function Eleves() {
   const { viewingAnnee } = useAnnee();
@@ -26,12 +29,48 @@ export default function Eleves() {
 
   async function loadEleves() {
     setLoading(true);
-    const params = viewingAnnee ? { q, classe_id: classeId, annee: viewingAnnee, page } : { q, classe_id: classeId, statut, page };
+    // "Redoublant" n'est plus un statut a part (un redoublant reste actif) : c'est un
+    // simple filtre supplementaire sur le flag redoublant, pour que l'admin puisse les
+    // retrouver un par un et reguler la situation de chaque classe lui-meme.
+    const statutParams = statut === 'redoublant' ? { statut: 'actif', redoublant: 1 } : { statut };
+    const params = viewingAnnee ? { q, classe_id: classeId, annee: viewingAnnee, page } : { q, classe_id: classeId, page, ...statutParams };
     const res = await client.get('/eleves', { params });
     setEleves(res.data.rows);
     setTotal(res.data.total);
     setTotalPages(res.data.totalPages);
     setLoading(false);
+  }
+
+  async function toggleStatut(e) {
+    const nouveau = e.statut === 'actif' ? 'suspendu' : 'actif';
+    const label = nouveau === 'suspendu' ? 'suspendre' : 'réactiver';
+    if (!window.confirm(`Confirmer : ${label} ${e.prenom} ${e.nom} ?`)) return;
+    try {
+      await client.put(`/eleves/${e.id}/statut`, { statut: nouveau });
+      loadEleves();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
+  async function retrograder(e) {
+    if (!window.confirm(`Rétrograder ${e.prenom} ${e.nom} vers la classe inférieure ?`)) return;
+    try {
+      await client.post(`/eleves/${e.id}/retrograder`);
+      loadEleves();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
+  async function archiver(e) {
+    if (!window.confirm(`Archiver ${e.prenom} ${e.nom} ? Il sera déplacé vers la corbeille et pourra être restauré pendant 30 jours.`)) return;
+    try {
+      await client.delete(`/eleves/${e.id}`);
+      loadEleves();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
   }
 
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
@@ -106,11 +145,11 @@ export default function Eleves() {
         <div className="table-container">
           <table>
             <thead>
-              <tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Statut</th><th>Payé</th><th>Reste</th><th></th></tr>
+              <tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Statut</th><th>Payé</th><th>Reste</th><th></th><th></th></tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={7}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
-              {!loading && eleves.length === 0 && <tr><td colSpan={7}><div className="empty-state"><i className="ph ph-user-focus"></i><h3>Aucun élève trouvé</h3><p>Essayez d'autres critères ou inscrivez un nouvel élève.</p></div></td></tr>}
+              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && eleves.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-user-focus"></i><h3>Aucun élève trouvé</h3><p>Essayez d'autres critères ou inscrivez un nouvel élève.</p></div></td></tr>}
               {eleves.map((e) => {
                 const reste = Math.max(0, e.frais_scolarite_total - e.total_paye);
                 return (
@@ -124,11 +163,35 @@ export default function Eleves() {
                     <td>
                       {e.archive
                         ? <span className={`badge ${STATUT_PAIEMENT_BADGE[e.statut_paiement] || 'badge-default'}`}>{STATUT_PAIEMENT_LABELS[e.statut_paiement] || e.statut_paiement}</span>
-                        : <span className={`badge ${e.statut === 'actif' ? 'badge-success' : e.statut === 'redoublant' ? 'badge-warning' : 'badge-default'}`}>{e.statut}</span>}
+                        : (
+                          <span className="flex gap-8" style={{ alignItems: 'center' }}>
+                            <span className={`badge ${STATUT_BADGE[e.statut] || 'badge-default'}`}>{STATUT_LABELS[e.statut] || e.statut}</span>
+                            {!!e.redoublant && <span className="badge badge-warning">Redoublant</span>}
+                          </span>
+                        )}
                     </td>
                     <td>{format(e.total_paye)}</td>
                     <td className={reste > 0 ? '' : 'text-muted'}><strong style={{ color: reste > 0 ? 'var(--danger)' : 'var(--success)' }}>{format(reste)}</strong></td>
                     <td><Link to={`/eleves/${e.id}`} className="btn btn-outline btn-sm"><i className="ph ph-eye"></i> Fiche</Link></td>
+                    <td>
+                      {e.statut !== 'transfere' && (
+                        <RowMenu>
+                          {(close) => (
+                            <>
+                              {(e.statut === 'actif' || e.statut === 'suspendu') && (
+                                <button onClick={() => { toggleStatut(e); close(); }}>
+                                  <i className={e.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {e.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
+                                </button>
+                              )}
+                              {e.statut === 'actif' && (
+                                <button onClick={() => { retrograder(e); close(); }}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>
+                              )}
+                              <button className="danger" onClick={() => { archiver(e); close(); }}><i className="ph ph-archive"></i> Archiver</button>
+                            </>
+                          )}
+                        </RowMenu>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

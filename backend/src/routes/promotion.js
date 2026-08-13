@@ -9,7 +9,7 @@ router.use(requireAuth);
 // GET /api/promotion/preview
 router.get('/preview', requirePermission('promotion'), async (req, res) => {
   const [rows] = await db.query(
-    `SELECT e.id, e.nom, e.prenom, e.statut, e.frais_scolarite_total,
+    `SELECT e.id, e.nom, e.prenom, e.statut, e.redoublant, e.frais_scolarite_total,
             c.nom as classe_actuelle, cs.nom as classe_suivante, cs.id as classe_suivante_id,
             cs.frais_scolarite as nouveaux_frais, cs.frais_inscription as nouvelle_inscription,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
@@ -74,14 +74,17 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
     let nbDiplomes = 0;
     for (const ec of elevesClasses) {
       if (ec.classe_superieure_id) {
+        // Tous les eleves actifs montent en classe superieure sans exception (l'ecole n'a
+        // pas de notes/points pour decider qui redouble automatiquement) : le flag
+        // redoublant est remis a zero, l'admin retrogradera au cas par cas plus tard si besoin.
         await conn.query(
-          `UPDATE eleves SET classe_id=?, statut='actif', annee_scolaire=?, frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
+          `UPDATE eleves SET classe_id=?, statut='actif', redoublant=0, annee_scolaire=?, frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
           [ec.classe_superieure_id, nouvelle_annee, ec.new_frais_s, ec.new_frais_i, ec.id]
         );
         nbPromus++;
       } else {
         await conn.query(
-          `UPDATE eleves SET statut='diplome', annee_scolaire=? WHERE id=?`,
+          `UPDATE eleves SET statut='diplome', redoublant=0, annee_scolaire=? WHERE id=?`,
           [nouvelle_annee, ec.id]
         );
         nbDiplomes++;

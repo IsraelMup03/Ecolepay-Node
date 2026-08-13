@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   `email_parent` varchar(150) DEFAULT NULL,
   `adresse` text DEFAULT NULL,
   `statut` enum('actif','redoublant','transfere','diplome','suspendu') DEFAULT 'actif',
+  `redoublant` tinyint(1) DEFAULT 0 COMMENT 'Redouble sa classe actuelle cette annee (reste actif, redemarre a 0 a la prochaine promotion)',
   `date_inscription` date DEFAULT NULL,
   `annee_scolaire` varchar(20) DEFAULT NULL,
   `frais_scolarite_total` decimal(15,2) DEFAULT 0.00 COMMENT 'Copie depuis la classe a l inscription',

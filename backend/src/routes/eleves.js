@@ -8,7 +8,7 @@ router.use(requireAuth);
 
 // GET /api/eleves?classe_id=&q=&statut=&annee=&page=&limit=  (annee: consulter une annee archivee)
 router.get('/', async (req, res) => {
-  const { classe_id, q, statut = 'actif', annee } = req.query;
+  const { classe_id, q, statut = 'actif', redoublant, annee } = req.query;
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const offset = (page - 1) * limit;
@@ -44,6 +44,7 @@ router.get('/', async (req, res) => {
   if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
   if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (statut) { where.push('e.statut=?'); params.push(statut); }
+  if (redoublant) { where.push('e.redoublant=1'); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
   const [[{ total }]] = await db.query(`SELECT COUNT(*) as total FROM eleves e ${whereStr}`, params);
@@ -91,7 +92,7 @@ router.get('/by-classe/:classeId', async (req, res) => {
     : "DATE_FORMAT(p2.date_paiement, '%Y-%m-%d %H:%i:%s')";
 
   const [rows] = await db.query(
-    `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total,
+    `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total, e.redoublant,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as dernier_paiement_date,
             (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
@@ -108,16 +109,17 @@ router.get('/by-classe/:classeId', async (req, res) => {
 
 // GET /api/eleves/export.csv
 router.get('/export.csv', async (req, res) => {
-  const { classe_id, q, statut = 'actif' } = req.query;
+  const { classe_id, q, statut = 'actif', redoublant } = req.query;
   const where = ['e.statut != "transfere"'];
   const params = [];
   if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
   if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (statut) { where.push('e.statut=?'); params.push(statut); }
+  if (redoublant) { where.push('e.redoublant=1'); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
   const [rows] = await db.query(
-    `SELECT e.matricule, e.prenom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut,
+    `SELECT e.matricule, e.prenom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut, e.redoublant,
             e.nom_parent, e.telephone_parent, e.frais_scolarite_total,
             COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             e.date_inscription, e.annee_scolaire
@@ -132,7 +134,7 @@ router.get('/export.csv', async (req, res) => {
     const reste = Math.max(0, e.frais_scolarite_total - e.total_paye);
     lines.push([
       e.matricule, e.prenom, e.nom, e.genre === 'F' ? 'Feminin' : 'Masculin',
-      e.date_naissance || '', e.classe, e.statut, e.nom_parent || '', e.telephone_parent || '',
+      e.date_naissance || '', e.classe, e.redoublant ? `${e.statut} (redoublant)` : e.statut, e.nom_parent || '', e.telephone_parent || '',
       e.frais_scolarite_total, e.total_paye, reste, e.date_inscription || '', e.annee_scolaire || '',
     ].join(';'));
   });
@@ -263,7 +265,24 @@ router.put('/:id', requirePermission('eleves'), async (req, res) => {
   res.json(updated);
 });
 
+// PUT /api/eleves/:id/statut  { statut: 'actif'|'suspendu' }  (bascule reversible et sans effet
+// de bord ; un redoublant reste un eleve actif comme les autres, ce toggle ne touche pas au flag)
+router.put('/:id/statut', requirePermission('eleves'), async (req, res) => {
+  const { id } = req.params;
+  const { statut } = req.body;
+  if (!['actif', 'suspendu'].includes(statut)) {
+    return res.status(400).json({ error: 'Statut invalide.' });
+  }
+  await db.query('UPDATE eleves SET statut=? WHERE id=?', [statut, id]);
+  await logActivite(req.user.id, 'Statut eleve modifie', `ID:${id} -> ${statut}`, req.ip);
+  res.json({ success: true });
+});
+
 // POST /api/eleves/:id/retrograder
+// L'eleve reste statut='actif' (un redoublant est un eleve actif comme un autre : il doit
+// rester visible dans la liste generale, dans la liste de sa nouvelle classe et dans la
+// recherche rapide de la Caisse). Seul le flag redoublant=1 marque qu'il refait sa classe
+// cette annee ; ce flag est remis a 0 automatiquement a la prochaine promotion.
 router.post('/:id/retrograder', requirePermission('eleves'), async (req, res) => {
   const { id } = req.params;
   const [[row]] = await db.query(
@@ -275,7 +294,7 @@ router.post('/:id/retrograder', requirePermission('eleves'), async (req, res) =>
   }
   const [[nci]] = await db.query('SELECT frais_scolarite, frais_inscription FROM classes WHERE id=?', [row.classe_inferieure_id]);
   await db.query(
-    `UPDATE eleves SET classe_id=?, statut='redoublant', frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
+    `UPDATE eleves SET classe_id=?, redoublant=1, frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
     [row.classe_inferieure_id, nci.frais_scolarite, nci.frais_inscription, id]
   );
   await logActivite(req.user.id, 'Eleve retrograde', `ID:${id}`, req.ip);

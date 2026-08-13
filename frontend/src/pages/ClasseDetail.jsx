@@ -162,7 +162,7 @@ export default function ClasseDetail() {
                 {filteredEleves.map((e) => (
                   <tr key={e.id}>
                     <td>{e.matricule}</td>
-                    <td>{e.nom}</td>
+                    <td>{e.nom} {!!e.redoublant && <span className="badge badge-warning" style={{ marginLeft: 6 }}>Redoublant</span>}</td>
                     <td>{e.prenom}</td>
                     <td>{format(e.total_paye)}</td>
                     <td>{format(Math.max(0, (e.frais_scolarite_total || 0) - (e.total_paye || 0)))}</td>

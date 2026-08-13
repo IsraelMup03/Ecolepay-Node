@@ -4,6 +4,9 @@ import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
 
+const STATUT_BADGE = { actif: 'badge-success', suspendu: 'badge-danger', diplome: 'badge-info', transfere: 'badge-default' };
+const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplômé', transfere: 'Transféré' };
+
 export default function EleveDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -38,6 +41,19 @@ export default function EleveDetail() {
     navigate('/eleves');
   }
 
+  async function toggleStatut() {
+    const nouveau = data.eleve.statut === 'actif' ? 'suspendu' : 'actif';
+    const label = nouveau === 'suspendu' ? 'suspendre' : 'réactiver';
+    if (!window.confirm(`Confirmer : ${label} cet élève ?`)) return;
+    try {
+      await client.put(`/eleves/${id}/statut`, { statut: nouveau });
+      setMsg(nouveau === 'suspendu' ? 'Élève suspendu.' : 'Élève réactivé.');
+      load();
+    } catch (err) {
+      setMsg(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
   if (loading) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement...</p></div>;
   if (!data) return <div className="alert alert-danger">Élève introuvable.</div>;
 
@@ -60,7 +76,10 @@ export default function EleveDetail() {
             </div>
             <table>
               <tbody>
-                <tr><td className="text-muted">Statut</td><td><span className="badge badge-success">{eleve.statut}</span></td></tr>
+                <tr><td className="text-muted">Statut</td><td>
+                  <span className={`badge ${STATUT_BADGE[eleve.statut] || 'badge-default'}`}>{STATUT_LABELS[eleve.statut] || eleve.statut}</span>
+                  {!!eleve.redoublant && <span className="badge badge-warning" style={{ marginLeft: 6 }}>Redoublant</span>}
+                </td></tr>
                 <tr><td className="text-muted">Date de naissance</td><td>{eleve.date_naissance || '—'}</td></tr>
                 <tr><td className="text-muted">Lieu de naissance</td><td>{eleve.lieu_naissance || '—'}</td></tr>
                 <tr><td className="text-muted">Parent/tuteur</td><td>{eleve.nom_parent || '—'}</td></tr>
@@ -72,10 +91,15 @@ export default function EleveDetail() {
             </table>
 
             {!viewingAnnee && (
-              <div className="flex gap-8" style={{ marginTop: 18 }}>
+              <div className="flex gap-8" style={{ marginTop: 18, flexWrap: 'wrap' }}>
                 <button className="btn btn-outline" onClick={() => navigate('/caisse')}><i className="ph ph-money"></i> Enregistrer un paiement</button>
-                {eleve.classe_inf_nom && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
-                <button className="btn btn-danger" onClick={archiver}><i className="ph ph-archive"></i> Archiver</button>
+                {eleve.classe_inf_nom && eleve.statut === 'actif' && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
+                {(eleve.statut === 'actif' || eleve.statut === 'suspendu') && (
+                  <button className="btn btn-outline" onClick={toggleStatut}>
+                    <i className={eleve.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {eleve.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
+                  </button>
+                )}
+                {eleve.statut !== 'transfere' && <button className="btn btn-danger" onClick={archiver}><i className="ph ph-archive"></i> Archiver</button>}
               </div>
             )}
           </div>
