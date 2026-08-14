@@ -71,17 +71,33 @@ function deviseLabel(code) { return code === 'CDF' ? 'FC' : code; }
  * Retourne la ligne libre suivante.
  */
 function addTable(sheet, startRow, columns, rows, options = {}) {
-  sheet.columns = columns.map((c) => ({ key: c.key, width: c.width || 16 }));
   const devise = options.devise || 'USD';
   const taux = options.taux || 1;
   const label = deviseLabel(devise);
   const numFmt = devise === 'USD' ? `#,##0.00 "${label}"` : `#,##0 "${label}"`;
   const convertir = (v) => (devise === 'USD' ? v : v * taux);
 
+  // La largeur passee en `col.width` sert de plancher ; on l'elargit automatiquement si le
+  // contenu reel (en-tete ou valeurs) est plus long, pour ne jamais tronquer/comprimer un nom,
+  // un email ou un montant a 8 chiffres. Les colonnes existantes n'ont donc plus besoin d'un
+  // reglage manuel au pixel pres.
+  const headerLabels = columns.map((col) => (col.type === 'currency' ? `${col.header} (${label})` : col.header));
+  const widths = columns.map((col, i) => Math.max(col.width || 12, headerLabels[i].length + 2));
+  rows.forEach((r) => {
+    columns.forEach((col, i) => {
+      const rawVal = r[col.key];
+      let display;
+      if (col.type === 'currency') display = convertir(parseFloat(rawVal) || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+      else display = rawVal === undefined || rawVal === null ? '' : String(rawVal);
+      widths[i] = Math.min(60, Math.max(widths[i], display.length + 2));
+    });
+  });
+  sheet.columns = columns.map((c, i) => ({ key: c.key, width: widths[i] }));
+
   const headerRow = sheet.getRow(startRow);
   columns.forEach((col, i) => {
     const cell = headerRow.getCell(i + 1);
-    cell.value = col.type === 'currency' ? `${col.header} (${label})` : col.header;
+    cell.value = headerLabels[i];
     cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_PRIMARY_LIGHT } };
     cell.alignment = { vertical: 'middle', horizontal: col.type === 'text' ? 'left' : 'center' };

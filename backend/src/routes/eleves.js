@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
-const { genererMatricule, logActivite, envoyerCorbeille, getParam } = require('../utils/helpers');
+const { genererMatricule, logActivite, envoyerCorbeille, getParam, getEcole } = require('../utils/helpers');
+const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -107,41 +108,70 @@ router.get('/by-classe/:classeId', async (req, res) => {
   })));
 });
 
-// GET /api/eleves/export.csv
-router.get('/export.csv', async (req, res) => {
-  const { classe_id, q, statut = 'actif', redoublant } = req.query;
-  const where = ['e.statut != "transfere"'];
-  const params = [];
-  if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
-  if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
-  if (statut) { where.push('e.statut=?'); params.push(statut); }
-  if (redoublant) { where.push('e.redoublant=1'); }
-  const whereStr = `WHERE ${where.join(' AND ')}`;
+// GET /api/eleves/export.xlsx
+router.get('/export.xlsx', async (req, res) => {
+  try {
+    const { classe_id, q, statut = 'actif', redoublant, devise: deviseQ } = req.query;
+    const where = ['e.statut != "transfere"'];
+    const params = [];
+    if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
+    if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    if (statut) { where.push('e.statut=?'); params.push(statut); }
+    if (redoublant) { where.push('e.redoublant=1'); }
+    const whereStr = `WHERE ${where.join(' AND ')}`;
 
-  const [rows] = await db.query(
-    `SELECT e.matricule, e.prenom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut, e.redoublant,
-            e.nom_parent, e.telephone_parent, e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
-            e.date_inscription, e.annee_scolaire
-     FROM eleves e JOIN classes c ON c.id=e.classe_id
-     ${whereStr} ORDER BY e.nom ASC`,
-    params
-  );
+    const [rows] = await db.query(
+      `SELECT e.matricule, e.prenom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut, e.redoublant,
+              e.nom_parent, e.telephone_parent, e.frais_scolarite_total,
+              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
+              e.date_inscription, e.annee_scolaire
+       FROM eleves e JOIN classes c ON c.id=e.classe_id
+       ${whereStr} ORDER BY e.nom ASC`,
+      params
+    );
 
-  const header = ['Matricule', 'Prenom', 'Nom', 'Genre', 'Date Naissance', 'Classe', 'Statut', 'Parent', 'Tel. Parent', 'Frais Total', 'Total Paye', 'Reste', 'Inscription', 'Annee'];
-  const lines = [header.join(';')];
-  rows.forEach((e) => {
-    const reste = Math.max(0, e.frais_scolarite_total - e.total_paye);
-    lines.push([
-      e.matricule, e.prenom, e.nom, e.genre === 'F' ? 'Feminin' : 'Masculin',
-      e.date_naissance || '', e.classe, e.redoublant ? `${e.statut} (redoublant)` : e.statut, e.nom_parent || '', e.telephone_parent || '',
-      e.frais_scolarite_total, e.total_paye, reste, e.date_inscription || '', e.annee_scolaire || '',
-    ].join(';'));
-  });
+    const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Dipl\u00F4m\u00E9', transfere: 'Transf\u00E9r\u00E9' };
+    const ecole = await getEcole();
+    const devise = deviseQ === 'CDF' || (deviseQ && deviseQ !== 'USD') ? deviseQ : 'USD';
+    const taux = parseFloat(await getParam('taux_usd_cdf', '1')) || 1;
+    const workbook = newWorkbook();
+    const sheet = workbook.addWorksheet('\u00C9l\u00E8ves', { views: [{ state: 'frozen', ySplit: 8 }] });
+    const columns = [
+      { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
+      { header: 'Nom', key: 'nom', width: 18, type: 'text' },
+      { header: 'Pr\u00E9nom', key: 'prenom', width: 18, type: 'text' },
+      { header: 'Genre', key: 'genre', width: 10, type: 'text' },
+      { header: 'Date naissance', key: 'date_naissance', width: 16, type: 'text' },
+      { header: 'Classe', key: 'classe', width: 24, type: 'text' },
+      { header: 'Statut', key: 'statut', width: 20, type: 'text' },
+      { header: 'Parent/tuteur', key: 'parent', width: 22, type: 'text' },
+      { header: 'T\u00E9l\u00E9phone parent', key: 'telephone', width: 18, type: 'text' },
+      { header: 'Frais total', key: 'frais_total', width: 16, type: 'currency', totalize: true },
+      { header: 'Total pay\u00E9', key: 'total_paye', width: 16, type: 'currency', totalize: true },
+      { header: 'Reste', key: 'reste', width: 16, type: 'currency', totalize: true },
+      { header: 'Inscription', key: 'inscription', width: 16, type: 'text' },
+      { header: 'Ann\u00E9e scolaire', key: 'annee', width: 16, type: 'text' },
+    ];
+    const nextRow = addLetterhead(sheet, {
+      ecole, title: 'Liste des \u00E9l\u00E8ves', subtitle: `${rows.length} \u00E9l\u00E8ve(s)`,
+      generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
+      numCols: columns.length,
+    });
+    addTable(sheet, nextRow, columns, rows.map((e) => ({
+      matricule: e.matricule, nom: e.nom, prenom: e.prenom, genre: e.genre === 'F' ? 'F\u00E9minin' : 'Masculin',
+      date_naissance: e.date_naissance || '\u2014', classe: e.classe,
+      statut: (STATUT_LABELS[e.statut] || e.statut) + (e.redoublant ? ' (redoublant)' : ''),
+      parent: e.nom_parent || '\u2014', telephone: e.telephone_parent || '\u2014',
+      frais_total: parseFloat(e.frais_scolarite_total) || 0, total_paye: parseFloat(e.total_paye) || 0,
+      reste: Math.max(0, (parseFloat(e.frais_scolarite_total) || 0) - (parseFloat(e.total_paye) || 0)),
+      inscription: e.date_inscription || '\u2014', annee: e.annee_scolaire || '\u2014',
+    })), { showTotals: true, devise, taux });
 
-  res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-  res.setHeader('Content-Disposition', `attachment; filename="eleves_${Date.now()}.csv"`);
-  res.send('\uFEFF' + lines.join('\n'));
+    await sendWorkbook(res, workbook, `eleves_${Date.now()}.xlsx`);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
+  }
 });
 
 // GET /api/eleves/:id (fiche detaillee + paiements + calculs) - ?annee=X pour consulter une annee passee

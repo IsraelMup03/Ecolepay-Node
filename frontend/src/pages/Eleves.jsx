@@ -12,7 +12,7 @@ const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplôm�
 
 export default function Eleves() {
   const { viewingAnnee } = useAnnee();
-  const { format } = useDevise();
+  const { format, devise } = useDevise();
   const [eleves, setEleves] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -99,13 +99,13 @@ export default function Eleves() {
 
   function exportCsv() {
     const token = localStorage.getItem('ecolepay_token');
-    const params = new URLSearchParams({ q, classe_id: classeId, statut }).toString();
-    fetch(`${API_URL}/eleves/export.csv?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+    const params = new URLSearchParams({ q, classe_id: classeId, statut, devise }).toString();
+    fetch(`${API_URL}/eleves/export.xlsx?${params}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => res.blob())
       .then((blob) => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = 'eleves.csv'; a.click();
+        a.href = url; a.download = `eleves_${Date.now()}.xlsx`; a.click();
         window.URL.revokeObjectURL(url);
       });
   }
@@ -135,7 +135,7 @@ export default function Eleves() {
         )}
         {!viewingAnnee && (
           <>
-            <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-download-simple"></i> Exporter CSV</button>
+            <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-file-xls"></i> Exporter (Excel)</button>
             <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Inscrire un élève</button>
           </>
         )}

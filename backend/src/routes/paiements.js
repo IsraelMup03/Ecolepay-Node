@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { genererReferencePaiement, logActivite, getEcole, getParam } = require('../utils/helpers');
+const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
 
 const router = express.Router();
 
@@ -59,10 +60,10 @@ router.get('/', async (req, res) => {
   res.json({ paiements: rows, total, somme, page, totalPages: Math.ceil(total / perPage) });
 });
 
-// GET /api/paiements/export.csv  (memes filtres que la liste, sans pagination)
-router.get('/export.csv', async (req, res) => {
+// GET /api/paiements/export.xlsx  (memes filtres que la liste, sans pagination)
+router.get('/export.xlsx', async (req, res) => {
   try {
-    const { q, classe_id, debut, fin, type, statut = 'valide', annee } = req.query;
+    const { q, classe_id, debut, fin, type, statut = 'valide', annee, devise: deviseQ } = req.query;
     const anneeFiltre = annee || await getParam('annee_scolaire_courante');
 
     const where = ['1=1'];
@@ -77,7 +78,7 @@ router.get('/export.csv', async (req, res) => {
     const whereStr = `WHERE ${where.join(' AND ')}`;
 
     const [rows] = await db.query(
-      `SELECT p.reference, p.montant, p.devise, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
+      `SELECT p.reference, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
               e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
        LEFT JOIN utilisateurs u ON u.id=p.comptable_id
@@ -85,28 +86,41 @@ router.get('/export.csv', async (req, res) => {
       params
     );
 
-    const total = rows.reduce((s, r) => s + parseFloat(r.montant_usd || 0), 0);
-    const meta = [
-      `# Rapport: Liste des paiements (année ${anneeFiltre})`,
-      `# Généré le: ${new Date().toLocaleString()}`,
-      `# Nombre: ${rows.length} · Total (USD): ${total.toFixed(2)}`,
-      '# Colonnes: Reference;Montant;Devise;Montant(USD);Type;Mode;Statut;Date;Matricule;Nom;Prenom;Classe;Encaisse par',
+    const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
+    const MOTIF_LABELS = { scolarite: 'Scolarité', inscription: 'Inscription', uniforme: 'Uniforme', fournitures: 'Fournitures', cantine: 'Cantine', transport: 'Transport', excursion: 'Excursion', examen: 'Examen', assurance: 'Assurance', activites: 'Activités', autre: 'Autre' };
+    const ecole = await getEcole();
+    const devise = deviseQ === 'CDF' || (deviseQ && deviseQ !== 'USD') ? deviseQ : 'USD';
+    const taux = parseFloat(await getParam('taux_usd_cdf', '1')) || 1;
+    const workbook = newWorkbook();
+    const sheet = workbook.addWorksheet('Paiements', { views: [{ state: 'frozen', ySplit: 8 }] });
+    const columns = [
+      { header: 'Référence', key: 'reference', width: 22, type: 'text' },
+      { header: 'Élève', key: 'eleve', width: 24, type: 'text' },
+      { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
+      { header: 'Classe', key: 'classe', width: 22, type: 'text' },
+      { header: 'Motif', key: 'motif', width: 16, type: 'text' },
+      { header: 'Mode', key: 'mode', width: 16, type: 'text' },
+      { header: 'Statut', key: 'statut', width: 14, type: 'text' },
+      { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Date', key: 'date', width: 18, type: 'text' },
+      { header: 'Encaissé par', key: 'encaisse_par', width: 20, type: 'text' },
     ];
-    const header = ['Reference', 'Montant', 'Devise', 'Montant(USD)', 'Type', 'Mode', 'Statut', 'Date', 'Matricule', 'Nom', 'Prenom', 'Classe', 'Encaisse par'];
-    const lines = [header.join(';')];
-    rows.forEach((p) => {
-      lines.push([
-        p.reference, p.montant, p.devise, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
-        p.matricule, p.nom, p.prenom, p.classe, p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '',
-      ].join(';'));
+    const nextRow = addLetterhead(sheet, {
+      ecole, title: `Liste des paiements — Année ${anneeFiltre}`, subtitle: `${rows.length} paiement(s)`,
+      generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
+      numCols: columns.length,
     });
+    addTable(sheet, nextRow, columns, rows.map((p) => ({
+      reference: p.reference, eleve: `${p.prenom} ${p.nom}`, matricule: p.matricule, classe: p.classe || '—',
+      motif: MOTIF_LABELS[p.type_paiement] || p.type_paiement, mode: MODE_LABELS[p.mode_paiement] || p.mode_paiement,
+      statut: p.statut, montant: parseFloat(p.montant_usd) || 0, date: new Date(p.date_paiement).toLocaleString('fr-FR'),
+      encaisse_par: p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—',
+    })), { showTotals: true, devise, taux });
 
-    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-    res.setHeader('Content-Disposition', `attachment; filename="paiements_${anneeFiltre}_${Date.now()}.csv"`);
-    res.send('﻿' + meta.join('\n') + '\n' + lines.join('\n'));
+    await sendWorkbook(res, workbook, `paiements_${anneeFiltre}_${Date.now()}.xlsx`);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Erreur lors de la generation du CSV.' });
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
   }
 });
 

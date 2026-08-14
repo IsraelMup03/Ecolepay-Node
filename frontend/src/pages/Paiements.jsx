@@ -5,7 +5,7 @@ import { useDevise } from '../context/DeviseContext.jsx';
 
 export default function Paiements() {
   const { viewingAnnee } = useAnnee();
-  const { format } = useDevise();
+  const { format, devise } = useDevise();
   const [rows, setRows] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -33,16 +33,16 @@ export default function Paiements() {
 
   function exportCsv() {
     const token = localStorage.getItem('ecolepay_token');
-    const params = { q, classe_id: classeId, type };
+    const params = { q, classe_id: classeId, type, devise };
     if (viewingAnnee) params.annee = viewingAnnee;
     else { params.debut = debut; params.fin = fin; }
     const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v))).toString();
-    fetch(`${API_URL}/paiements/export.csv?${qs}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_URL}/paiements/export.xlsx?${qs}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => res.blob())
       .then((blob) => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = 'paiements.csv'; a.click();
+        a.href = url; a.download = `paiements_${Date.now()}.xlsx`; a.click();
         window.URL.revokeObjectURL(url);
       });
   }
@@ -82,7 +82,7 @@ export default function Paiements() {
             <div className="form-group"><input type="date" value={fin} onChange={(e) => { setFin(e.target.value); setPage(1); }} /></div>
           </>
         )}
-        <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-download-simple"></i> Exporter CSV</button>
+        <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-file-xls"></i> Exporter (Excel)</button>
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
