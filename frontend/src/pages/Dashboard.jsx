@@ -4,11 +4,13 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import GenererRapportButton from '../components/GenererRapportButton.jsx';
 
 export default function Dashboard() {
   const { viewingAnnee } = useAnnee();
   const { format, convert } = useDevise();
+  const { hasPermission } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -64,6 +66,26 @@ export default function Dashboard() {
               <div className="sub">Ce mois : {format(stats.paiementsMois)}</div>
             </div>
           </div>
+        )}
+        {hasPermission('comptabilite') && (
+          <>
+            <div className="stat-card">
+              <div className="stat-icon red"><i className="ph-bold ph-arrow-circle-up"></i></div>
+              <div className="stat-info">
+                <div className="label">Dépenses</div>
+                <div className="value">{format(stats.totalDepenses)}</div>
+                <div className="sub">Sur l'année {annee}</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon blue"><i className="ph-bold ph-scales"></i></div>
+              <div className="stat-info">
+                <div className="label">Solde net</div>
+                <div className="value" style={{ color: stats.soldeNet >= 0 ? 'var(--success)' : 'var(--danger)' }}>{format(stats.soldeNet)}</div>
+                <div className="sub">Recettes − dépenses</div>
+              </div>
+            </div>
+          </>
         )}
         <div className="stat-card">
           <div className="stat-icon blue"><i className="ph-bold ph-percent"></i></div>

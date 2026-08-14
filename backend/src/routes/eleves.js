@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
-const { genererMatricule, logActivite, envoyerCorbeille, getParam, getEcole } = require('../utils/helpers');
+const { genererMatricule, logActivite, envoyerCorbeille, getParam, getEcole, nomCompletConditions } = require('../utils/helpers');
 const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
 
 const router = express.Router();
@@ -20,13 +20,17 @@ router.get('/', async (req, res) => {
       const whereA = ['a.annee_scolaire=?'];
       const paramsA = [annee];
       if (classe_id) { whereA.push('a.classe_id=?'); paramsA.push(classe_id); }
-      if (q) { whereA.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); paramsA.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+      if (q) {
+        const { sql: nomSql, count: nomCount } = nomCompletConditions('e');
+        whereA.push(`(e.nom LIKE ? OR e.postnom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR ${nomSql})`);
+        paramsA.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, ...Array(nomCount).fill(`%${q}%`));
+      }
       const [[{ total }]] = await db.query(
         `SELECT COUNT(*) as total FROM archives_annuelles a JOIN eleves e ON e.id=a.eleve_id WHERE ${whereA.join(' AND ')}`,
         paramsA
       );
       const [rows] = await db.query(
-        `SELECT e.id, e.matricule, e.nom, e.prenom, e.genre, a.classe_id, c.nom as classe_nom,
+        `SELECT e.id, e.matricule, e.nom, e.postnom, e.prenom, e.genre, a.classe_id, c.nom as classe_nom,
                 a.frais_scolarite_total, a.total_paye, a.statut_paiement
          FROM archives_annuelles a
          JOIN eleves e ON e.id=a.eleve_id
@@ -43,7 +47,11 @@ router.get('/', async (req, res) => {
   const where = ['e.statut != "transfere"'];
   const params = [];
   if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
-  if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) {
+    const { sql: nomSql, count: nomCount } = nomCompletConditions('e');
+    where.push(`(e.nom LIKE ? OR e.postnom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR ${nomSql})`);
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, ...Array(nomCount).fill(`%${q}%`));
+  }
   if (statut) { where.push('e.statut=?'); params.push(statut); }
   if (redoublant) { where.push('e.redoublant=1'); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
@@ -63,14 +71,15 @@ router.get('/', async (req, res) => {
 router.get('/search', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
+  const { sql: nomSql, count: nomCount } = nomCompletConditions('e');
   const [rows] = await db.query(
-    `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe,
+    `SELECT e.id, e.nom, e.postnom, e.prenom, e.matricule, e.genre, c.nom as classe,
             e.frais_scolarite_total,
             COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
-     WHERE e.statut='actif' AND (e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR CONCAT(e.prenom,' ',e.nom) LIKE ?)
+     WHERE e.statut='actif' AND (e.nom LIKE ? OR e.postnom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR ${nomSql})
      ORDER BY e.nom ASC, e.prenom ASC LIMIT 10`,
-    [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`]
+    [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, ...Array(nomCount).fill(`%${q}%`)]
   );
   const result = rows.map((e) => ({
     ...e,
@@ -93,7 +102,7 @@ router.get('/by-classe/:classeId', async (req, res) => {
     : "DATE_FORMAT(p2.date_paiement, '%Y-%m-%d %H:%i:%s')";
 
   const [rows] = await db.query(
-    `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total, e.redoublant,
+    `SELECT e.id, e.nom, e.postnom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total, e.redoublant,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as dernier_paiement_date,
             (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
@@ -115,13 +124,17 @@ router.get('/export.xlsx', async (req, res) => {
     const where = ['e.statut != "transfere"'];
     const params = [];
     if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
-    if (q) { where.push('(e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    if (q) {
+      const { sql: nomSql, count: nomCount } = nomCompletConditions('e');
+      where.push(`(e.nom LIKE ? OR e.postnom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR ${nomSql})`);
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, ...Array(nomCount).fill(`%${q}%`));
+    }
     if (statut) { where.push('e.statut=?'); params.push(statut); }
     if (redoublant) { where.push('e.redoublant=1'); }
     const whereStr = `WHERE ${where.join(' AND ')}`;
 
     const [rows] = await db.query(
-      `SELECT e.matricule, e.prenom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut, e.redoublant,
+      `SELECT e.matricule, e.prenom, e.postnom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut, e.redoublant,
               e.nom_parent, e.telephone_parent, e.frais_scolarite_total,
               COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
               e.date_inscription, e.annee_scolaire
@@ -139,6 +152,7 @@ router.get('/export.xlsx', async (req, res) => {
     const columns = [
       { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
       { header: 'Nom', key: 'nom', width: 18, type: 'text' },
+      { header: 'Post-nom', key: 'postnom', width: 18, type: 'text' },
       { header: 'Pr\u00E9nom', key: 'prenom', width: 18, type: 'text' },
       { header: 'Genre', key: 'genre', width: 10, type: 'text' },
       { header: 'Date naissance', key: 'date_naissance', width: 16, type: 'text' },
@@ -158,7 +172,7 @@ router.get('/export.xlsx', async (req, res) => {
       numCols: columns.length,
     });
     addTable(sheet, nextRow, columns, rows.map((e) => ({
-      matricule: e.matricule, nom: e.nom, prenom: e.prenom, genre: e.genre === 'F' ? 'F\u00E9minin' : 'Masculin',
+      matricule: e.matricule, nom: e.nom, postnom: e.postnom || '\u2014', prenom: e.prenom, genre: e.genre === 'F' ? 'F\u00E9minin' : 'Masculin',
       date_naissance: e.date_naissance || '\u2014', classe: e.classe,
       statut: (STATUT_LABELS[e.statut] || e.statut) + (e.redoublant ? ' (redoublant)' : ''),
       parent: e.nom_parent || '\u2014', telephone: e.telephone_parent || '\u2014',
@@ -206,7 +220,11 @@ router.get('/:id', async (req, res) => {
 
   const totalPayeScolarite = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'scolarite').reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
   const totalPayeInscription = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'inscription').reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
-  const totalRembourse = paiements.filter((p) => p.statut === 'rembourse').reduce((s, p) => s + parseFloat(p.montant), 0);
+  // Inclut les remboursements totaux ET partiels (un paiement partiellement rembourse reste
+  // statut='valide', seul son montant net diminue -- se fier au seul statut='rembourse'
+  // ignorait tous les remboursements partiels et affichait toujours 0.
+  const totalRembourse = paiements.reduce((s, p) => s + (parseFloat(p.montant_rembourse_usd) || 0), 0);
+  const totalSurplusNonRendu = paiements.filter((p) => !p.surplus_rembourse).reduce((s, p) => s + (parseFloat(p.montant_surplus) || 0), 0);
 
   let fraisScolariteRef = eleve.frais_scolarite_total;
   let fraisInscriptionRef = eleve.frais_inscription_total;
@@ -224,7 +242,7 @@ router.get('/:id', async (req, res) => {
 
   res.json({
     eleve, paiements, modeHistorique,
-    totaux: { totalPayeScolarite, totalPayeInscription, totalRembourse, resteScolarite, resteInscription, pctScolarite },
+    totaux: { totalPayeScolarite, totalPayeInscription, totalRembourse, totalSurplusNonRendu, resteScolarite, resteInscription, pctScolarite },
   });
 });
 
@@ -256,7 +274,7 @@ router.get('/:id/caisse-info', async (req, res) => {
 // POST /api/eleves (inscription)
 router.post('/', requirePermission('eleves'), async (req, res) => {
   const {
-    nom, prenom, genre = 'M', classe_id, date_naissance, lieu_naissance,
+    nom, postnom, prenom, genre = 'M', classe_id, date_naissance, lieu_naissance,
     nom_parent, telephone_parent, email_parent, adresse,
   } = req.body;
 
@@ -271,10 +289,10 @@ router.post('/', requirePermission('eleves'), async (req, res) => {
   const matricule = await genererMatricule();
 
   const [result] = await db.query(
-    `INSERT INTO eleves (matricule,nom,prenom,genre,date_naissance,lieu_naissance,classe_id,nom_parent,telephone_parent,email_parent,adresse,statut,date_inscription,annee_scolaire,frais_scolarite_total,frais_inscription_total,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,'actif',CURDATE(),?,?,?,?)`,
+    `INSERT INTO eleves (matricule,nom,postnom,prenom,genre,date_naissance,lieu_naissance,classe_id,nom_parent,telephone_parent,email_parent,adresse,statut,date_inscription,annee_scolaire,frais_scolarite_total,frais_inscription_total,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'actif',CURDATE(),?,?,?,?)`,
     [
-      matricule, nom, prenom, genre, date_naissance || null, lieu_naissance || null,
+      matricule, nom, postnom || null, prenom, genre, date_naissance || null, lieu_naissance || null,
       classe_id, nom_parent || null, telephone_parent || null, email_parent || null, adresse || null,
       annee, cls.frais_scolarite, cls.frais_inscription, req.user.id,
     ]
@@ -287,10 +305,10 @@ router.post('/', requirePermission('eleves'), async (req, res) => {
 // PUT /api/eleves/:id (modification)
 router.put('/:id', requirePermission('eleves'), async (req, res) => {
   const { id } = req.params;
-  const { nom, prenom, genre, date_naissance, lieu_naissance, classe_id, nom_parent, telephone_parent, email_parent, adresse, statut } = req.body;
+  const { nom, postnom, prenom, genre, date_naissance, lieu_naissance, classe_id, nom_parent, telephone_parent, email_parent, adresse, statut } = req.body;
   await db.query(
-    `UPDATE eleves SET nom=?,prenom=?,genre=?,date_naissance=?,lieu_naissance=?,classe_id=?,nom_parent=?,telephone_parent=?,email_parent=?,adresse=?,statut=? WHERE id=?`,
-    [nom, prenom, genre, date_naissance || null, lieu_naissance, classe_id, nom_parent, telephone_parent, email_parent, adresse, statut, id]
+    `UPDATE eleves SET nom=?,postnom=?,prenom=?,genre=?,date_naissance=?,lieu_naissance=?,classe_id=?,nom_parent=?,telephone_parent=?,email_parent=?,adresse=?,statut=? WHERE id=?`,
+    [nom, postnom || null, prenom, genre, date_naissance || null, lieu_naissance, classe_id, nom_parent, telephone_parent, email_parent, adresse, statut, id]
   );
   await logActivite(req.user.id, 'Eleve modifie', `ID:${id}`, req.ip);
   const [[updated]] = await db.query('SELECT * FROM eleves WHERE id=?', [id]);

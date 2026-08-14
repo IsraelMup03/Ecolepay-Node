@@ -126,6 +126,9 @@ export default function Caisse() {
                           {p.montant_rembourse_usd > 0 && (
                             <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                           )}
+                          {p.montant_surplus > 0 && !p.surplus_rembourse && (
+                            <div style={{ fontSize: 11, color: 'var(--warning)' }}><i className="ph ph-warning"></i> Surplus de {format(p.montant_surplus)} à rendre</div>
+                          )}
                         </td>
                       </tr>
                     ))}

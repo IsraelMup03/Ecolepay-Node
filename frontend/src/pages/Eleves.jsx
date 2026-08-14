@@ -23,7 +23,8 @@ export default function Eleves() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ nom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -73,6 +74,24 @@ export default function Eleves() {
     }
   }
 
+  function openNew() {
+    setEditing(null);
+    setForm({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
+    setError('');
+    setShowModal(true);
+  }
+
+  function openEdit(e) {
+    setEditing(e);
+    setForm({
+      nom: e.nom || '', postnom: e.postnom || '', prenom: e.prenom || '', genre: e.genre || 'M', classe_id: e.classe_id || '',
+      date_naissance: e.date_naissance || '', lieu_naissance: e.lieu_naissance || '',
+      nom_parent: e.nom_parent || '', telephone_parent: e.telephone_parent || '', email_parent: e.email_parent || '', adresse: e.adresse || '',
+    });
+    setError('');
+    setShowModal(true);
+  }
+
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
   useEffect(() => { setPage(1); }, [q, classeId, statut, viewingAnnee]);
   useEffect(() => {
@@ -86,9 +105,14 @@ export default function Eleves() {
     setError('');
     setSaving(true);
     try {
-      await client.post('/eleves', form);
+      if (editing) {
+        // statut n'est pas modifiable ici (dediee au toggle Suspendre/Reactiver) mais le PUT
+        // l'exige : on renvoie la valeur actuelle pour ne pas l'ecraser par erreur.
+        await client.put(`/eleves/${editing.id}`, { ...form, statut: editing.statut });
+      } else {
+        await client.post('/eleves', form);
+      }
       setShowModal(false);
-      setForm({ nom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
       loadEleves();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur.');
@@ -136,7 +160,7 @@ export default function Eleves() {
         {!viewingAnnee && (
           <>
             <button className="btn btn-outline" onClick={exportCsv}><i className="ph ph-file-xls"></i> Exporter (Excel)</button>
-            <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Inscrire un élève</button>
+            <button className="btn btn-accent" onClick={openNew}><i className="ph ph-plus"></i> Inscrire un élève</button>
           </>
         )}
       </div>
@@ -157,7 +181,7 @@ export default function Eleves() {
                     <td><code>{e.matricule}</code></td>
                     <td className="flex gap-8" style={{ alignItems: 'center' }}>
                       <div className={e.genre === 'F' ? 'genre-f' : 'genre-m'}>{e.genre}</div>
-                      <div><strong>{e.prenom} {e.nom}</strong></div>
+                      <div><strong>{e.prenom} {e.postnom ? `${e.postnom} ` : ''}{e.nom}</strong></div>
                     </td>
                     <td>{e.classe_nom}</td>
                     <td>
@@ -178,6 +202,7 @@ export default function Eleves() {
                         <RowMenu>
                           {(close) => (
                             <>
+                              <button onClick={() => { openEdit(e); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
                               {(e.statut === 'actif' || e.statut === 'suspendu') && (
                                 <button onClick={() => { toggleStatut(e); close(); }}>
                                   <i className={e.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {e.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
@@ -210,7 +235,7 @@ export default function Eleves() {
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
           <div className="modal-header">
-            <i className="ph ph-user-plus"></i><h3>Inscrire un nouvel élève</h3>
+            <i className={editing ? 'ph ph-pencil-simple' : 'ph ph-user-plus'}></i><h3>{editing ? `Modifier ${editing.prenom} ${editing.nom}` : 'Inscrire un nouvel élève'}</h3>
             <button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button>
           </div>
           <form onSubmit={handleSubmit}>
@@ -220,22 +245,23 @@ export default function Eleves() {
                 <div className="form-section-title">Informations de l'élève</div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Nom *</label><input value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} required /></div>
-                  <div className="form-group"><label>Prénom *</label><input value={form.prenom} onChange={(e) => setForm({ ...form, prenom: e.target.value })} required /></div>
+                  <div className="form-group"><label>Post-nom</label><input value={form.postnom} onChange={(e) => setForm({ ...form, postnom: e.target.value })} /></div>
                 </div>
                 <div className="form-grid form-grid-2">
+                  <div className="form-group"><label>Prénom *</label><input value={form.prenom} onChange={(e) => setForm({ ...form, prenom: e.target.value })} required /></div>
                   <div className="form-group">
                     <label>Genre</label>
                     <select value={form.genre} onChange={(e) => setForm({ ...form, genre: e.target.value })}>
                       <option value="M">Masculin</option><option value="F">Féminin</option>
                     </select>
                   </div>
-                  <div className="form-group">
-                    <label>Classe *</label>
-                    <select value={form.classe_id} onChange={(e) => setForm({ ...form, classe_id: e.target.value })} required>
-                      <option value="">Sélectionner...</option>
-                      {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                    </select>
-                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Classe *</label>
+                  <select value={form.classe_id} onChange={(e) => setForm({ ...form, classe_id: e.target.value })} required>
+                    <option value="">Sélectionner...</option>
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                  </select>
                 </div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Date de naissance</label><input type="date" value={form.date_naissance} onChange={(e) => setForm({ ...form, date_naissance: e.target.value })} /></div>
@@ -252,7 +278,7 @@ export default function Eleves() {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Annuler</button>
-              <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : 'Inscrire'}</button>
+              <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : editing ? 'Enregistrer' : 'Inscrire'}</button>
             </div>
           </form>
         </div>

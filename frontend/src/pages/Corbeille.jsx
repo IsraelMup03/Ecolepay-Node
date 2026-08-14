@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 
-const TABLE_LABELS = { eleves: 'Élève', classes: 'Classe', utilisateurs: 'Utilisateur' };
+const TABLE_LABELS = { eleves: 'Élève', classes: 'Classe', utilisateurs: 'Utilisateur', depenses: 'Dépense' };
 
 export default function Corbeille() {
   const { viewingAnnee } = useAnnee();
@@ -35,6 +35,7 @@ export default function Corbeille() {
       if (item.table_source === 'eleves') return `${d.prenom} ${d.nom} (${d.matricule})`;
       if (item.table_source === 'classes') return d.nom;
       if (item.table_source === 'utilisateurs') return `${d.prenom} ${d.nom} — ${d.email}`;
+      if (item.table_source === 'depenses') return `${d.reference} — ${d.beneficiaire || d.categorie} (${d.montant} ${d.devise})`;
       return '—';
     } catch (e) { return '—'; }
   }

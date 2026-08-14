@@ -1,6 +1,24 @@
 const db = require('../config/db');
 
 /**
+ * Construit une condition SQL permettant de retrouver un eleve par son nom complet,
+ * quel que soit l'ordre saisi ("Prenom Nom", "Prenom Postnom Nom" ou "Nom Prenom") : une
+ * simple recherche colonne par colonne (nom LIKE ? OR prenom LIKE ? ...) ne matche jamais
+ * un nom complet tape en une seule fois, puisqu'aucune colonne individuelle ne contient
+ * la chaine entiere. Retourne { sql, count } : `sql` est a inserer dans le WHERE (OR ...),
+ * `count` indique combien de `?` elle contient (pour pousser autant de fois le parametre LIKE).
+ */
+function nomCompletConditions(alias = 'e') {
+  const dbClient = (process.env.DB_CLIENT || '').toLowerCase();
+  const concat = (a, b, c) => (dbClient === 'sqlite'
+    ? `(${a} || ' ' || COALESCE(${b} || ' ', '') || ${c})`
+    : `CONCAT(${a}, ' ', COALESCE(CONCAT(${b}, ' '), ''), ${c})`);
+  const prenom = `${alias}.prenom`, postnom = `${alias}.postnom`, nom = `${alias}.nom`;
+  const sql = `${concat(prenom, postnom, nom)} LIKE ? OR ${concat(nom, postnom, prenom)} LIKE ?`;
+  return { sql, count: 2 };
+}
+
+/**
  * Genere un matricule unique du type EP-2026-0001, en incrementant le
  * compteur stocke dans les parametres (equivalent de genererMatricule()).
  */
@@ -111,6 +129,7 @@ function hasPermission(user, perm) {
 }
 
 module.exports = {
+  nomCompletConditions,
   genererMatricule,
   genererReferencePaiement,
   genererReferenceRemboursement,

@@ -19,6 +19,7 @@ const PERMISSIONS_DISPONIBLES = {
   parametres: 'Modifier les parametres',
   corbeille: 'Acceder a la corbeille',
   historique: "Voir l'historique des annees",
+  comptabilite: "Gerer la comptabilite (recettes, depenses, rapports financiers)",
 };
 
 // GET /api/utilisateurs

@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
 
+const STATUT_LABELS = { en_attente: 'En attente', approuve: 'Approuvé', rejete: 'Rejeté', rendu: 'Rendu' };
+
 export default function Remboursements() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { viewingAnnee } = useAnnee();
   const { format } = useDevise();
   const [rows, setRows] = useState([]);
@@ -66,37 +68,52 @@ export default function Remboursements() {
     await client.post(`/remboursements/${id}/rejeter`);
     load();
   }
+  async function marquerRendu(r) {
+    if (!window.confirm(`Confirmer que ce surplus de ${format(r.montant_usd)} a bien été rendu au parent/tuteur ?`)) return;
+    try {
+      await client.post(`/paiements/${r.paiement_id}/surplus-rembourse`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
+  const canManage = !viewingAnnee && (user.role === 'admin' || hasPermission('paiements'));
 
   return (
     <div>
       <div className="flex-between mb-16">
-        <div className="text-muted">{rows.length} demande(s) de remboursement{viewingAnnee ? ` — ${viewingAnnee}` : ''}</div>
+        <div className="text-muted">{rows.length} mouvement(s) de remboursement{viewingAnnee ? ` — ${viewingAnnee}` : ''}</div>
         {!viewingAnnee && <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Nouvelle demande</button>}
       </div>
 
       <div className="card">
         <div className="table-container">
           <table>
-            <thead><tr><th>Référence</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th>{!viewingAnnee && user.role === 'admin' && <th></th>}</tr></thead>
+            <thead><tr><th>Référence</th><th>Type</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th>{canManage && <th></th>}</tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
-              {!loading && rows.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-arrow-counter-clockwise"></i><h3>Aucune demande</h3></div></td></tr>}
+              {loading && <tr><td colSpan={9}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && rows.length === 0 && <tr><td colSpan={9}><div className="empty-state"><i className="ph ph-arrow-counter-clockwise"></i><h3>Aucune demande</h3></div></td></tr>}
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td><code>{r.reference_remboursement}</code></td>
+                  <td><span className={`badge ${r.type === 'surplus' ? 'badge-warning' : 'badge-info'}`}>{r.type === 'surplus' ? 'Surplus' : 'Remboursement'}</span></td>
                   <td>{r.prenom} {r.nom} <span className="text-muted">({r.matricule})</span></td>
                   <td><code>{r.pay_ref}</code></td>
                   <td><strong>{format(r.montant_usd)}</strong></td>
                   <td className="text-muted">{r.motif}</td>
-                  <td><span className={`badge ${r.statut === 'approuve' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{r.statut}</span></td>
+                  <td><span className={`badge ${r.statut === 'approuve' || r.statut === 'rendu' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{STATUT_LABELS[r.statut] || r.statut}</span></td>
                   <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
-                  {!viewingAnnee && user.role === 'admin' && (
+                  {canManage && (
                     <td className="flex gap-8">
-                      {r.statut === 'en_attente' && (
+                      {r.type === 'remboursement' && r.statut === 'en_attente' && user.role === 'admin' && (
                         <>
                           <button className="btn btn-success btn-sm" onClick={() => approuver(r.id, r)}><i className="ph ph-check"></i></button>
                           <button className="btn btn-danger btn-sm" onClick={() => rejeter(r.id)}><i className="ph ph-x"></i></button>
                         </>
+                      )}
+                      {r.type === 'surplus' && r.statut === 'en_attente' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => marquerRendu(r)}>Marquer rendu</button>
                       )}
                     </td>
                   )}

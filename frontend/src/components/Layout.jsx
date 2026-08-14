@@ -17,6 +17,7 @@ const NAV_GROUPS = [
     { to: '/paiements', icon: 'ph-bold ph-credit-card', label: 'Paiements', perm: null },
     { to: '/remboursements', icon: 'ph-bold ph-arrow-counter-clockwise', label: 'Remboursements', perm: 'remboursements' },
     { to: '/promotion', icon: 'ph-bold ph-arrow-circle-up', label: 'Promotion annuelle', perm: 'promotion' },
+    { to: '/comptabilite', icon: 'ph-bold ph-calculator', label: 'Comptabilité', perm: 'comptabilite' },
   ]},
   { section: 'Analyse', railIcon: 'ph-bold ph-chart-line', items: [
     { to: '/rapports', icon: 'ph-bold ph-chart-bar', label: 'Rapports', perm: 'rapports' },
@@ -41,6 +42,7 @@ const PAGE_TITLES = {
   '/paiements': ['Historique des paiements', 'Toutes les transactions'],
   '/remboursements': ['Remboursements', 'Demandes et approbations'],
   '/promotion': ['Promotion annuelle', "Passage à l'année suivante"],
+  '/comptabilite': ['Comptabilité', "Recettes, dépenses et rapports financiers"],
   '/rapports': ['Rapports & statistiques', 'Analyse financière détaillée'],
   '/historique': ['Historique des années', "Tout ce qui s'est passé, année par année"],
   '/utilisateurs': ['Gestion des utilisateurs', 'Rôles et permissions'],

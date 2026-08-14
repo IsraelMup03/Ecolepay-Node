@@ -8,7 +8,7 @@ const RAPPORT_OPTIONS = [
   { type: 'mois', label: 'Rapport mensuel', icon: 'ph-calendar' },
 ];
 
-export default function GenererRapportButton() {
+export default function GenererRapportButton({ endpoint = '/rapports/download/periode.xlsx', filePrefix = 'rapport' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { devise } = useDevise();
@@ -23,12 +23,12 @@ export default function GenererRapportButton() {
   function telecharger(type) {
     setOpen(false);
     const token = localStorage.getItem('ecolepay_token');
-    fetch(`${API_URL}/rapports/download/periode.xlsx?type=${type}&devise=${devise}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_URL}${endpoint}?type=${type}&devise=${devise}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => res.blob())
       .then((blob) => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `rapport_${type}_${Date.now()}.xlsx`; a.click();
+        a.href = url; a.download = `${filePrefix}_${type}_${Date.now()}.xlsx`; a.click();
         window.URL.revokeObjectURL(url);
       });
   }

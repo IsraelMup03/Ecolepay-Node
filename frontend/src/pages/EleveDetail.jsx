@@ -81,6 +81,16 @@ export default function EleveDetail() {
     navigate('/eleves');
   }
 
+  async function marquerSurplusRendu(paiementId) {
+    if (!window.confirm('Confirmer que ce surplus a bien été rendu au parent/tuteur ?')) return;
+    try {
+      await client.post(`/paiements/${paiementId}/surplus-rembourse`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
   async function toggleStatut() {
     const nouveau = data.eleve.statut === 'actif' ? 'suspendu' : 'actif';
     const label = nouveau === 'suspendu' ? 'suspendre' : 'réactiver';
@@ -110,7 +120,7 @@ export default function EleveDetail() {
             <div className="flex gap-14 mb-16" style={{ alignItems: 'center' }}>
               <div className={eleve.genre === 'F' ? 'genre-f' : 'genre-m'} style={{ width: 48, height: 48, fontSize: 16 }}>{eleve.genre}</div>
               <div>
-                <div style={{ fontSize: 17, fontWeight: 700 }}>{eleve.prenom} {eleve.nom}</div>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>{eleve.prenom} {eleve.postnom ? `${eleve.postnom} ` : ''}{eleve.nom}</div>
                 <div className="text-muted">{eleve.matricule} · {eleve.classe_nom}</div>
               </div>
             </div>
@@ -155,7 +165,7 @@ export default function EleveDetail() {
               </div>
               <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{totaux.pctScolarite}% payé · Reste {format(totaux.resteScolarite)}</div>
             </div>
-            <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="stat-grid" style={{ gridTemplateColumns: totaux.totalSurplusNonRendu > 0 ? '1fr 1fr 1fr' : '1fr 1fr' }}>
               <div className="stat-card">
                 <div className="stat-icon green"><i className="ph ph-check-circle"></i></div>
                 <div className="stat-info"><div className="label">Inscription payée</div><div className="value" style={{ fontSize: 16 }}>{format(totaux.totalPayeInscription)}</div></div>
@@ -164,6 +174,12 @@ export default function EleveDetail() {
                 <div className="stat-icon red"><i className="ph ph-arrow-counter-clockwise"></i></div>
                 <div className="stat-info"><div className="label">Total remboursé</div><div className="value" style={{ fontSize: 16 }}>{format(totaux.totalRembourse)}</div></div>
               </div>
+              {totaux.totalSurplusNonRendu > 0 && (
+                <div className="stat-card">
+                  <div className="stat-icon orange"><i className="ph ph-warning"></i></div>
+                  <div className="stat-info"><div className="label">Surplus à rendre</div><div className="value" style={{ fontSize: 16 }}>{format(totaux.totalSurplusNonRendu)}</div></div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -184,6 +200,14 @@ export default function EleveDetail() {
                     <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
                     {p.montant_rembourse_usd > 0 && (
                       <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
+                    )}
+                    {p.montant_surplus > 0 && (
+                      <div style={{ fontSize: 11, color: p.surplus_rembourse ? 'var(--text-muted)' : 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <i className="ph ph-warning"></i> Surplus de {format(p.montant_surplus)}{p.surplus_rembourse ? ' (rendu)' : ' à rendre'}
+                        {!p.surplus_rembourse && !viewingAnnee && (
+                          <button className="btn btn-outline btn-sm" style={{ padding: '2px 6px', fontSize: 10 }} onClick={() => marquerSurplusRendu(p.id)}>Marquer rendu</button>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td>{p.mode_paiement}</td>

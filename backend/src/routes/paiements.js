@@ -205,9 +205,12 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
     }
 
     // La scolarite ne peut pas etre payee au-dela du montant attendu pour la classe : si le
-    // montant saisi depasse ce qu'il reste a payer, on n'enregistre que le reste du et on
-    // renvoie le surplus (dans la devise saisie par le caissier) pour qu'il le rende.
+    // montant saisi depasse ce qu'il reste a payer, on n'enregistre que le reste du. Le surplus
+    // (en USD, la devise canonique) est conserve sur la transaction elle-meme (montant_surplus)
+    // au lieu d'etre simplement renvoye puis perdu : il reste visible sur la fiche de l'eleve et
+    // remboursable tant qu'il n'a pas ete rendu (surplus_rembourse).
     let surplus = 0;
+    let surplusUSD = 0;
     if (type_paiement === 'scolarite') {
       const [[eleve]] = await db.query('SELECT frais_scolarite_total, annee_scolaire FROM eleves WHERE id=?', [eleveId]);
       if (!eleve) return res.status(400).json({ error: 'Eleve introuvable.' });
@@ -221,7 +224,7 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
         return res.status(400).json({ error: 'La scolarité de cet élève est déjà entièrement payée.' });
       }
       if (montantUSD > resteScolarite + 0.009) {
-        const surplusUSD = montantUSD - resteScolarite;
+        surplusUSD = montantUSD - resteScolarite;
         surplus = deviseSaisie === 'CDF' ? surplusUSD * taux : surplusUSD;
         montantUSD = resteScolarite;
         montantCDF = resteScolarite * taux;
@@ -232,12 +235,12 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
     const reference = genererReferencePaiement();
     const [result] = await db.query(
       `INSERT INTO paiements
-         (reference, eleve_id, type_paiement, montant, devise, montant_usd, montant_local, taux_change, mode_paiement, periode, description, comptable_id, annee_scolaire, date_paiement)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
-      [reference, eleveId, type_paiement, montantSaisi, deviseSaisie, montantUSD, montantCDF, taux, mode_paiement, periode || null, description || null, req.user.id, annee]
+         (reference, eleve_id, type_paiement, montant, devise, montant_usd, montant_local, taux_change, mode_paiement, periode, description, comptable_id, annee_scolaire, montant_surplus, date_paiement)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+      [reference, eleveId, type_paiement, montantSaisi, deviseSaisie, montantUSD, montantCDF, taux, mode_paiement, periode || null, description || null, req.user.id, annee, surplusUSD]
     );
 
-    await logActivite(req.user.id, 'Paiement enregistre', `Ref:${reference} Eleve:${eleveId} Montant:${montantSaisi} ${deviseSaisie} = ${montantUSD.toFixed(2)} USD${surplus > 0 ? ` (surplus rendu: ${surplus.toFixed(2)} ${deviseSaisie})` : ''}`, req.ip);
+    await logActivite(req.user.id, 'Paiement enregistre', `Ref:${reference} Eleve:${eleveId} Montant:${montantSaisi} ${deviseSaisie} = ${montantUSD.toFixed(2)} USD${surplus > 0 ? ` (surplus a rembourser: ${surplus.toFixed(2)} ${deviseSaisie})` : ''}`, req.ip);
 
     res.status(201).json({
       id: result.insertId, reference,
@@ -247,6 +250,18 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
     console.error(e);
     res.status(500).json({ error: 'Erreur lors de l\'enregistrement du paiement.' });
   }
+});
+
+// POST /api/paiements/:id/surplus-rembourse  (marque le surplus d'une transaction comme rendu)
+router.post('/:id/surplus-rembourse', requirePermission('paiements'), async (req, res) => {
+  const { id } = req.params;
+  const [[p]] = await db.query('SELECT id, montant_surplus, surplus_rembourse FROM paiements WHERE id=?', [id]);
+  if (!p) return res.status(404).json({ error: 'Paiement introuvable.' });
+  if (!(parseFloat(p.montant_surplus) > 0)) return res.status(400).json({ error: "Ce paiement n'a pas de surplus a rendre." });
+  if (p.surplus_rembourse) return res.status(400).json({ error: 'Ce surplus a deja ete rendu.' });
+  await db.query('UPDATE paiements SET surplus_rembourse=1 WHERE id=?', [id]);
+  await logActivite(req.user.id, 'Surplus rendu', `Paiement ID:${id} - ${p.montant_surplus} USD`, req.ip);
+  res.json({ success: true });
 });
 
 module.exports = router;

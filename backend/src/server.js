@@ -18,6 +18,7 @@ const profilRoutes = require('./routes/profil');
 const rapportsRoutes = require('./routes/rapports');
 const historiqueRoutes = require('./routes/historique');
 const rechercheRoutes = require('./routes/recherche');
+const comptabiliteRoutes = require('./routes/comptabilite');
 
 // Filet de securite : une exception non geree dans une route async ne doit jamais
 // arreter tout le serveur (nodemon ne redemarre pas automatiquement apres un crash,
@@ -56,6 +57,7 @@ app.use('/api/profil', profilRoutes);
 app.use('/api/rapports', rapportsRoutes);
 app.use('/api/historique', historiqueRoutes);
 app.use('/api/recherche', rechercheRoutes);
+app.use('/api/comptabilite', comptabiliteRoutes);
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {

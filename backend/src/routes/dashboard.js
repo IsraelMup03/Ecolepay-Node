@@ -35,6 +35,11 @@ router.get('/', async (req, res) => {
     );
     const elevesNonSoldes = totalEleves - elevesSoldes;
 
+    const [[{ totalDepenses }]] = await db.query(
+      "SELECT COALESCE(SUM(montant_usd),0) as totalDepenses FROM depenses WHERE annee_scolaire=?", [annee]
+    );
+    const soldeNet = totalAnnee - totalDepenses;
+
     const [mensuel] = await db.query(
       `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
               SUM(montant_usd) as total, COUNT(*) as nb
@@ -66,6 +71,7 @@ router.get('/', async (req, res) => {
         totalEleves, totalFilles, totalGarcons, totalClasses,
         totalAnnee, paiementsAujourdhui: 0, paiementsMois: 0, totalAttendu, taux,
         elevesSoldes, elevesNonSoldes, payF: 0, payM: 0,
+        totalDepenses, soldeNet,
       },
       mensuel, parClasse, derniers,
     });
@@ -96,6 +102,11 @@ router.get('/', async (req, res) => {
     [annee]
   );
   const elevesNonSoldes = totalEleves - elevesSoldes;
+
+  const [[{ totalDepenses }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd),0) as totalDepenses FROM depenses WHERE annee_scolaire=?", [annee]
+  );
+  const soldeNet = totalAnnee - totalDepenses;
 
   const [mensuel] = await db.query(
     `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
@@ -134,6 +145,7 @@ router.get('/', async (req, res) => {
       totalEleves, totalFilles, totalGarcons, totalClasses,
       totalAnnee, paiementsAujourdhui, paiementsMois, totalAttendu, taux,
       elevesSoldes, elevesNonSoldes, payF, payM,
+      totalDepenses, soldeNet,
     },
     mensuel, parClasse, derniers,
   });

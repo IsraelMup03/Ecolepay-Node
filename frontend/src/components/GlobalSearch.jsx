@@ -72,7 +72,7 @@ export default function GlobalSearch() {
                 <div key={`e-${e.id}`} className="global-search-item" onClick={() => goTo(`/eleves/${e.id}`)}>
                   <div className={e.genre === 'F' ? 'genre-f' : 'genre-m'}>{e.genre}</div>
                   <div>
-                    <div className="global-search-item-title">{e.prenom} {e.nom}</div>
+                    <div className="global-search-item-title">{e.prenom} {e.postnom ? `${e.postnom} ` : ''}{e.nom}</div>
                     <div className="global-search-item-sub">{e.matricule} · {e.classe_nom || '—'}</div>
                   </div>
                 </div>

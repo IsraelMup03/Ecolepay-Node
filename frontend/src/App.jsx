@@ -15,6 +15,7 @@ import Paiements from './pages/Paiements.jsx';
 import Recu from './pages/Recu.jsx';
 import RecuVerify from './pages/RecuVerify.jsx';
 import Remboursements from './pages/Remboursements.jsx';
+import Comptabilite from './pages/Comptabilite.jsx';
 import Promotion from './pages/Promotion.jsx';
 import Rapports from './pages/Rapports.jsx';
 import Historique from './pages/Historique.jsx';
@@ -63,6 +64,7 @@ export default function App() {
       <Route path="/classes/:id" element={<Page perm="classes"><ClasseDetail /></Page>} />
       <Route path="/paiements" element={<Page><Paiements /></Page>} />
       <Route path="/remboursements" element={<Page perm="remboursements"><Remboursements /></Page>} />
+      <Route path="/comptabilite" element={<Page perm="comptabilite"><Comptabilite /></Page>} />
       <Route path="/promotion" element={<Page perm="promotion"><Promotion /></Page>} />
       <Route path="/rapports" element={<Page perm="rapports"><Rapports /></Page>} />
       <Route path="/historique" element={<Page perm="historique"><Historique /></Page>} />

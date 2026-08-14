@@ -7,6 +7,10 @@ const router = express.Router();
 router.use(requireAuth);
 
 // GET /api/remboursements?annee=  (par defaut: annee scolaire en cours)
+// Fusionne les demandes de remboursement formelles avec les surplus de paiement
+// (change du a un depassement) : ce sont deux mecanismes distincts (voir paiements.js),
+// mais du point de vue de l'utilisateur ce sont toutes les deux des sommes dues a rendre
+// a une famille, donc elles apparaissent ensemble dans cette liste.
 router.get('/', async (req, res) => {
   const anneeFiltre = req.query.annee || await getParam('annee_scolaire_courante');
   const [rows] = await db.query(
@@ -22,7 +26,33 @@ router.get('/', async (req, res) => {
      ORDER BY r.date_remboursement DESC`,
     [anneeFiltre]
   );
-  res.json(rows);
+  const remboursements = rows.map((r) => ({ ...r, type: 'remboursement' }));
+
+  const [surplusRows] = await db.query(
+    `SELECT p.id as paiement_id, p.reference as pay_ref, p.montant_surplus, p.surplus_rembourse,
+            p.date_paiement, p.annee_scolaire,
+            e.nom, e.prenom, e.matricule, c.nom as classe
+     FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
+     WHERE p.annee_scolaire=? AND p.montant_surplus>0
+     ORDER BY p.date_paiement DESC`,
+    [anneeFiltre]
+  );
+  const surplus = surplusRows.map((p) => ({
+    id: `surplus-${p.paiement_id}`,
+    type: 'surplus',
+    paiement_id: p.paiement_id,
+    reference_remboursement: `SURPLUS-${p.pay_ref}`,
+    pay_ref: p.pay_ref,
+    nom: p.nom, prenom: p.prenom, matricule: p.matricule, classe: p.classe,
+    montant_usd: p.montant_surplus,
+    devise: 'USD',
+    motif: `Surplus à rendre sur le paiement ${p.pay_ref}`,
+    statut: p.surplus_rembourse ? 'rendu' : 'en_attente',
+    date_remboursement: p.date_paiement,
+  }));
+
+  const all = [...remboursements, ...surplus].sort((a, b) => new Date(b.date_remboursement) - new Date(a.date_remboursement));
+  res.json(all);
 });
 
 // POST /api/remboursements  (demande) - { paiement_id, motif, montant? }

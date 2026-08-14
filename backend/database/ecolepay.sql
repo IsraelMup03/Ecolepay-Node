@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `matricule` varchar(50) NOT NULL,
   `nom` varchar(100) NOT NULL,
+  `postnom` varchar(100) DEFAULT NULL,
   `prenom` varchar(100) NOT NULL,
   `genre` enum('M','F') NOT NULL,
   `date_naissance` date DEFAULT NULL,
@@ -158,6 +159,8 @@ CREATE TABLE IF NOT EXISTS `paiements` (
   `comptable_id` int(11) DEFAULT NULL,
   `imprime` tinyint(1) DEFAULT 0,
   `annee_scolaire` varchar(20) DEFAULT NULL,
+  `montant_surplus` decimal(15,4) DEFAULT 0.0000 COMMENT 'Surplus encaisse au-dela du du (USD), a rendre',
+  `surplus_rembourse` tinyint(1) DEFAULT 0,
   `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `reference` (`reference`),
@@ -257,4 +260,30 @@ CREATE TABLE IF NOT EXISTS `archives_annuelles` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `annee_eleve` (`annee_scolaire`,`eleve_id`),
   KEY `idx_archives_annee_classe` (`annee_scolaire`,`classe_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: depenses (sorties de caisse / comptabilite de l'etablissement)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `depenses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `reference` varchar(50) NOT NULL,
+  `categorie` varchar(50) NOT NULL DEFAULT 'autre',
+  `montant` decimal(15,2) NOT NULL,
+  `devise` varchar(10) DEFAULT 'USD',
+  `montant_usd` decimal(15,4) DEFAULT 0.0000,
+  `montant_local` decimal(15,2) DEFAULT 0.00,
+  `taux_change` decimal(15,4) DEFAULT 1.0000,
+  `mode_paiement` enum('especes','mobile_money','virement','cheque') DEFAULT 'especes',
+  `beneficiaire` varchar(200) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `date_depense` datetime DEFAULT CURRENT_TIMESTAMP,
+  `comptable_id` int(11) DEFAULT NULL,
+  `annee_scolaire` varchar(20) DEFAULT NULL,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `reference` (`reference`),
+  KEY `idx_depenses_date` (`date_depense`),
+  KEY `idx_depenses_annee_categorie` (`annee_scolaire`,`categorie`),
+  CONSTRAINT `fk_depense_comptable` FOREIGN KEY (`comptable_id`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

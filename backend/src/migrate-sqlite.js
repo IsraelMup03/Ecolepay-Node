@@ -80,6 +80,7 @@ async function main() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       matricule TEXT NOT NULL UNIQUE,
       nom TEXT NOT NULL,
+      postnom TEXT,
       prenom TEXT NOT NULL,
       genre TEXT NOT NULL,
       date_naissance DATE,
@@ -123,6 +124,8 @@ async function main() {
       comptable_id INTEGER,
       imprime INTEGER DEFAULT 0,
       annee_scolaire TEXT,
+      montant_surplus NUMERIC DEFAULT 0,
+      surplus_rembourse INTEGER DEFAULT 0,
       date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (eleve_id) REFERENCES eleves(id),
       FOREIGN KEY (comptable_id) REFERENCES utilisateurs(id) ON DELETE SET NULL
@@ -179,6 +182,25 @@ async function main() {
       date_archive DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (annee_scolaire, eleve_id)
     );
+
+    CREATE TABLE IF NOT EXISTS depenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT NOT NULL UNIQUE,
+      categorie TEXT NOT NULL DEFAULT 'autre',
+      montant NUMERIC NOT NULL,
+      devise TEXT DEFAULT 'USD',
+      montant_usd NUMERIC DEFAULT 0,
+      montant_local NUMERIC DEFAULT 0,
+      taux_change NUMERIC DEFAULT 1,
+      mode_paiement TEXT DEFAULT 'especes',
+      beneficiaire TEXT,
+      description TEXT,
+      date_depense DATETIME DEFAULT CURRENT_TIMESTAMP,
+      comptable_id INTEGER,
+      annee_scolaire TEXT,
+      date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (comptable_id) REFERENCES utilisateurs(id) ON DELETE SET NULL
+    );
   `);
 
   console.log('Creation des index...');
@@ -195,6 +217,8 @@ async function main() {
     CREATE INDEX IF NOT EXISTS idx_eleves_classe_statut ON eleves(classe_id, statut);
     CREATE INDEX IF NOT EXISTS idx_remb_paiement_statut ON remboursements(paiement_id, statut);
     CREATE INDEX IF NOT EXISTS idx_archives_annee_classe ON archives_annuelles(annee_scolaire, classe_id);
+    CREATE INDEX IF NOT EXISTS idx_depenses_date ON depenses(date_depense);
+    CREATE INDEX IF NOT EXISTS idx_depenses_annee_categorie ON depenses(annee_scolaire, categorie);
   `);
 
   console.log('Insertion des donnees de base...');
