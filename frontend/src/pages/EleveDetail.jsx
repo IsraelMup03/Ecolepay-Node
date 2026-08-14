@@ -7,6 +7,8 @@ import { useDevise } from '../context/DeviseContext.jsx';
 const STATUT_BADGE = { actif: 'badge-success', suspendu: 'badge-danger', diplome: 'badge-info', transfere: 'badge-default' };
 const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplômé', transfere: 'Transféré' };
 
+const PAIEMENT_FORM_INIT = { montant: '', devise: 'USD', type_paiement: 'scolarite', mode_paiement: 'especes', periode: '', description: '' };
+
 export default function EleveDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -15,6 +17,11 @@ export default function EleveDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState(PAIEMENT_FORM_INIT);
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentSuccess, setPaymentSuccess] = useState(null);
+  const [paying, setPaying] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -23,6 +30,39 @@ export default function EleveDetail() {
     setLoading(false);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id, viewingAnnee]);
+
+  function openPaymentModal() {
+    setPaymentForm(PAIEMENT_FORM_INIT);
+    setPaymentError('');
+    setPaymentSuccess(null);
+    setShowPaymentModal(true);
+  }
+
+  async function submitPayment(ev) {
+    ev.preventDefault();
+    setPaymentError('');
+    setPaying(true);
+    try {
+      const res = await client.post('/paiements', {
+        eleve_id: id,
+        montant: parseFloat(paymentForm.montant),
+        devise: paymentForm.devise,
+        type_paiement: paymentForm.type_paiement,
+        mode_paiement: paymentForm.mode_paiement,
+        periode: paymentForm.periode,
+        description: paymentForm.description,
+      });
+      setPaymentSuccess(res.data);
+      load();
+      if (res.data.surplus) {
+        alert(`Seul le montant restant dû a été enregistré (la scolarité est maintenant soldée). Surplus à rendre : ${res.data.surplus.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${res.data.surplusDevise}.`);
+      }
+    } catch (err) {
+      setPaymentError(err.response?.data?.error || "Erreur lors de l'enregistrement.");
+    } finally {
+      setPaying(false);
+    }
+  }
 
   async function retrograder() {
     if (!window.confirm('Confirmer la rétrogradation de cet élève vers la classe inférieure ?')) return;
@@ -92,7 +132,7 @@ export default function EleveDetail() {
 
             {!viewingAnnee && (
               <div className="flex gap-8" style={{ marginTop: 18, flexWrap: 'wrap' }}>
-                <button className="btn btn-outline" onClick={() => navigate('/caisse')}><i className="ph ph-money"></i> Enregistrer un paiement</button>
+                <button className="btn btn-outline" onClick={openPaymentModal}><i className="ph ph-money"></i> Enregistrer un paiement</button>
                 {eleve.classe_inf_nom && eleve.statut === 'actif' && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
                 {(eleve.statut === 'actif' || eleve.statut === 'suspendu') && (
                   <button className="btn btn-outline" onClick={toggleStatut}>
@@ -140,7 +180,12 @@ export default function EleveDetail() {
                 <tr key={p.id}>
                   <td><code>{p.reference}</code></td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                  <td><strong>{format(p.montant_usd)}</strong></td>
+                  <td>
+                    <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                    {p.montant_rembourse_usd > 0 && (
+                      <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
+                    )}
+                  </td>
                   <td>{p.mode_paiement}</td>
                   <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
@@ -150,6 +195,83 @@ export default function EleveDetail() {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${showPaymentModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowPaymentModal(false)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-money"></i><h3>Enregistrer un paiement — {eleve.prenom} {eleve.nom}</h3>
+            <button className="modal-close" onClick={() => setShowPaymentModal(false)}><i className="ph ph-x"></i></button>
+          </div>
+          <div className="modal-body">
+            {paymentError && <div className="alert alert-danger"><i className="ph ph-warning-circle"></i> {paymentError}</div>}
+            {paymentSuccess && (
+              <div className="alert alert-success">
+                <i className="ph ph-check"></i> Paiement enregistré ! Réf: {paymentSuccess.reference}
+                <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.open(`/recu/${paymentSuccess.id}`, '_blank')}>
+                  <i className="ph ph-printer"></i> Imprimer le reçu
+                </button>
+              </div>
+            )}
+            <div className="text-muted mb-16">Scolarité : {format(totaux.totalPayeScolarite)} / {format(eleve.frais_scolarite_total)} — Reste {format(totaux.resteScolarite)}</div>
+            <form onSubmit={submitPayment}>
+              <div className="form-grid">
+                <div className="form-grid form-grid-2">
+                  <div className="form-group">
+                    <label>Type de paiement</label>
+                    <select value={paymentForm.type_paiement} onChange={(e) => setPaymentForm({ ...paymentForm, type_paiement: e.target.value })}>
+                      <option value="scolarite">Scolarité</option>
+                      <option value="inscription">Inscription</option>
+                      <option value="uniforme">Uniforme scolaire</option>
+                      <option value="fournitures">Fournitures scolaires</option>
+                      <option value="cantine">Cantine / Restauration</option>
+                      <option value="transport">Transport scolaire</option>
+                      <option value="excursion">Excursion / Sortie</option>
+                      <option value="examen">Frais d'examen</option>
+                      <option value="assurance">Assurance scolaire</option>
+                      <option value="activites">Activités parascolaires</option>
+                      <option value="autre">Autre</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Mode de paiement</label>
+                    <select value={paymentForm.mode_paiement} onChange={(e) => setPaymentForm({ ...paymentForm, mode_paiement: e.target.value })}>
+                      <option value="especes">Espèces</option>
+                      <option value="mobile_money">Mobile Money</option>
+                      <option value="virement">Virement</option>
+                      <option value="cheque">Chèque</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-grid form-grid-2">
+                  <div className="form-group">
+                    <label>Montant</label>
+                    <input type="number" step="0.01" min="0" value={paymentForm.montant} onChange={(e) => setPaymentForm({ ...paymentForm, montant: e.target.value })} required />
+                  </div>
+                  <div className="form-group">
+                    <label>Devise</label>
+                    <select value={paymentForm.devise} onChange={(e) => setPaymentForm({ ...paymentForm, devise: e.target.value })}>
+                      <option value="USD">USD</option>
+                      <option value="CDF">CDF</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Période (optionnel)</label>
+                  <input placeholder="Ex: Septembre 2026, Trimestre 1..." value={paymentForm.periode} onChange={(e) => setPaymentForm({ ...paymentForm, periode: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Description (optionnel)</label>
+                  <textarea value={paymentForm.description} onChange={(e) => setPaymentForm({ ...paymentForm, description: e.target.value })} />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowPaymentModal(false)}>Fermer</button>
+                <button type="submit" className="btn btn-accent" disabled={paying}>{paying ? 'Enregistrement...' : <><i className="ph ph-check-circle"></i> Valider le paiement</>}</button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>

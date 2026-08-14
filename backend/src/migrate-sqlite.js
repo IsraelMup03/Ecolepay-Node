@@ -181,6 +181,22 @@ async function main() {
     );
   `);
 
+  console.log('Creation des index...');
+  // Sans ces index, chaque sous-requete correlee (SUM(...) WHERE eleve_id=...) fait un scan
+  // complet de la table paiements pour chaque eleve : instantane a quelques centaines d'eleves,
+  // mais devient tres lent (plusieurs secondes sur Dashboard/Rapports) a l'echelle d'une
+  // grande ecole (5000+ eleves, milliers de paiements).
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_paiements_eleve_statut_annee ON paiements(eleve_id, statut, annee_scolaire);
+    CREATE INDEX IF NOT EXISTS idx_paiements_annee_statut ON paiements(annee_scolaire, statut);
+    CREATE INDEX IF NOT EXISTS idx_paiements_annee_statut_type ON paiements(annee_scolaire, statut, type_paiement);
+    CREATE INDEX IF NOT EXISTS idx_paiements_date ON paiements(date_paiement);
+    CREATE INDEX IF NOT EXISTS idx_eleves_statut_annee ON eleves(statut, annee_scolaire);
+    CREATE INDEX IF NOT EXISTS idx_eleves_classe_statut ON eleves(classe_id, statut);
+    CREATE INDEX IF NOT EXISTS idx_remb_paiement_statut ON remboursements(paiement_id, statut);
+    CREATE INDEX IF NOT EXISTS idx_archives_annee_classe ON archives_annuelles(annee_scolaire, classe_id);
+  `);
+
   console.log('Insertion des donnees de base...');
   await db.run(`INSERT OR IGNORE INTO ecole (nom, adresse, telephone, email, devise, devise_locale, annee_scolaire) VALUES (?,?,?,?,?,?,?)`,
     ['Mon École', 'Kinshasa, RDC', '+243 000 000 000', 'ecole@example.com', 'USD', 'CDF', '2024-2025']);

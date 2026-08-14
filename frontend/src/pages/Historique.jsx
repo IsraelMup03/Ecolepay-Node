@@ -97,7 +97,12 @@ export default function Historique() {
                         <td>{p.prenom} {p.nom} <span className="text-muted">({p.matricule})</span></td>
                         <td>{p.classe || '—'}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                        <td><strong>{format(p.montant_usd)}</strong></td>
+                        <td>
+                          <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                          {p.montant_rembourse_usd > 0 && (
+                            <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
+                          )}
+                        </td>
                         <td>{p.mode_paiement}</td>
                         <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
                         <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>

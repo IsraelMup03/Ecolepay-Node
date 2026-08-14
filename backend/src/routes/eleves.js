@@ -190,7 +190,8 @@ router.get('/:id', async (req, res) => {
   if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
 
   const [tousPaiements] = await db.query(
-    `SELECT p.*, u.prenom as cpt_prenom, u.nom as cpt_nom
+    `SELECT p.*, u.prenom as cpt_prenom, u.nom as cpt_nom,
+            COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
      FROM paiements p LEFT JOIN utilisateurs u ON u.id=p.comptable_id
      WHERE p.eleve_id=? ORDER BY p.date_paiement DESC`,
     [id]
@@ -243,7 +244,8 @@ router.get('/:id/caisse-info', async (req, res) => {
   eleve.reste_inscription = Math.max(0, eleve.frais_inscription_total - eleve.total_paye_inscription);
 
   const [historique] = await db.query(
-    `SELECT p.*, u.prenom as c_prenom, u.nom as c_nom
+    `SELECT p.*, u.prenom as c_prenom, u.nom as c_nom,
+            COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
      FROM paiements p LEFT JOIN utilisateurs u ON u.id=p.comptable_id
      WHERE p.eleve_id=? AND p.annee_scolaire=? ORDER BY p.date_paiement DESC LIMIT 10`,
     [id, eleve.annee_scolaire]

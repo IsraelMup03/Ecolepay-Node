@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
   if (debut) { where.push('DATE(p.date_paiement)>=?'); params.push(debut); }
   if (fin) { where.push('DATE(p.date_paiement)<=?'); params.push(fin); }
   if (type) { where.push('p.type_paiement=?'); params.push(type); }
-  if (statut) { where.push('p.statut=?'); params.push(statut); }
+  if (statut && statut !== 'tous') { where.push('p.statut=?'); params.push(statut); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
   const [[{ total }]] = await db.query(
@@ -50,7 +50,8 @@ router.get('/', async (req, res) => {
     `SELECT COALESCE(SUM(p.montant_usd),0) as somme FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
   );
   const [rows] = await db.query(
-    `SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+    `SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
+            COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
      LEFT JOIN utilisateurs u ON u.id=p.comptable_id
      ${whereStr} ORDER BY p.date_paiement DESC LIMIT ${perPage} OFFSET ${offset}`,
@@ -74,12 +75,13 @@ router.get('/export.xlsx', async (req, res) => {
     if (debut) { where.push('DATE(p.date_paiement)>=?'); params.push(debut); }
     if (fin) { where.push('DATE(p.date_paiement)<=?'); params.push(fin); }
     if (type) { where.push('p.type_paiement=?'); params.push(type); }
-    if (statut) { where.push('p.statut=?'); params.push(statut); }
+    if (statut && statut !== 'tous') { where.push('p.statut=?'); params.push(statut); }
     const whereStr = `WHERE ${where.join(' AND ')}`;
 
     const [rows] = await db.query(
       `SELECT p.reference, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
-              e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+              e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
+              COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
        LEFT JOIN utilisateurs u ON u.id=p.comptable_id
        ${whereStr} ORDER BY p.date_paiement DESC`,
@@ -102,6 +104,7 @@ router.get('/export.xlsx', async (req, res) => {
       { header: 'Mode', key: 'mode', width: 16, type: 'text' },
       { header: 'Statut', key: 'statut', width: 14, type: 'text' },
       { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Remboursement', key: 'remb', width: 22, type: 'text' },
       { header: 'Date', key: 'date', width: 18, type: 'text' },
       { header: 'Encaissé par', key: 'encaisse_par', width: 20, type: 'text' },
     ];
@@ -110,12 +113,19 @@ router.get('/export.xlsx', async (req, res) => {
       generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
       numCols: columns.length,
     });
-    addTable(sheet, nextRow, columns, rows.map((p) => ({
-      reference: p.reference, eleve: `${p.prenom} ${p.nom}`, matricule: p.matricule, classe: p.classe || '—',
-      motif: MOTIF_LABELS[p.type_paiement] || p.type_paiement, mode: MODE_LABELS[p.mode_paiement] || p.mode_paiement,
-      statut: p.statut, montant: parseFloat(p.montant_usd) || 0, date: new Date(p.date_paiement).toLocaleString('fr-FR'),
-      encaisse_par: p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—',
-    })), { showTotals: true, devise, taux });
+    addTable(sheet, nextRow, columns, rows.map((p) => {
+      const rembUsd = parseFloat(p.montant_rembourse_usd) || 0;
+      const rembAffiche = devise === 'CDF' ? rembUsd * taux : rembUsd;
+      const rembLabel = devise === 'CDF' ? 'FC' : 'USD';
+      return {
+        reference: p.reference, eleve: `${p.prenom} ${p.nom}`, matricule: p.matricule, classe: p.classe || '—',
+        motif: MOTIF_LABELS[p.type_paiement] || p.type_paiement, mode: MODE_LABELS[p.mode_paiement] || p.mode_paiement,
+        statut: p.statut, montant: parseFloat(p.montant_usd) || 0,
+        remb: rembUsd > 0 ? `Remboursé de ${rembAffiche.toLocaleString('fr-FR', { maximumFractionDigits: devise === 'CDF' ? 0 : 2 })} ${rembLabel}` : '—',
+        date: new Date(p.date_paiement).toLocaleString('fr-FR'),
+        encaisse_par: p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—',
+      };
+    }), { showTotals: true, devise, taux });
 
     await sendWorkbook(res, workbook, `paiements_${anneeFiltre}_${Date.now()}.xlsx`);
   } catch (e) {
@@ -170,40 +180,73 @@ router.get('/:id/recu', async (req, res) => {
 
 // POST /api/paiements  (enregistrement d'un paiement - equivalent caisse.php)
 router.post('/', requirePermission('paiements'), async (req, res) => {
-  const { eleve_id, montant, devise, type_paiement = 'scolarite', mode_paiement = 'especes', periode, description } = req.body;
+  try {
+    const { eleve_id, montant, devise, type_paiement = 'scolarite', mode_paiement = 'especes', periode, description } = req.body;
 
-  const eleveId = parseInt(eleve_id, 10);
-  const montantSaisi = parseFloat(montant);
-  if (!eleveId || !(montantSaisi > 0)) {
-    return res.status(400).json({ error: 'Veuillez saisir un montant valide.' });
+    const eleveId = parseInt(eleve_id, 10);
+    let montantSaisi = parseFloat(montant);
+    if (!eleveId || !(montantSaisi > 0)) {
+      return res.status(400).json({ error: 'Veuillez saisir un montant valide.' });
+    }
+
+    const ecole = await getEcole();
+    const devPrincipale = ecole?.devise || 'USD';
+    const deviseSaisie = devise || devPrincipale;
+    const taux = parseFloat(await getParam('taux_usd_cdf', '2800'));
+    const annee = await getParam('annee_scolaire_courante');
+
+    let montantUSD, montantCDF;
+    if (deviseSaisie === 'CDF') {
+      montantUSD = taux > 0 ? montantSaisi / taux : montantSaisi;
+      montantCDF = montantSaisi;
+    } else {
+      montantUSD = montantSaisi;
+      montantCDF = montantSaisi * taux;
+    }
+
+    // La scolarite ne peut pas etre payee au-dela du montant attendu pour la classe : si le
+    // montant saisi depasse ce qu'il reste a payer, on n'enregistre que le reste du et on
+    // renvoie le surplus (dans la devise saisie par le caissier) pour qu'il le rende.
+    let surplus = 0;
+    if (type_paiement === 'scolarite') {
+      const [[eleve]] = await db.query('SELECT frais_scolarite_total, annee_scolaire FROM eleves WHERE id=?', [eleveId]);
+      if (!eleve) return res.status(400).json({ error: 'Eleve introuvable.' });
+      const [[{ dejaPaye }]] = await db.query(
+        `SELECT COALESCE(SUM(montant_usd),0) as dejaPaye FROM paiements
+         WHERE eleve_id=? AND statut='valide' AND type_paiement='scolarite' AND annee_scolaire=?`,
+        [eleveId, eleve.annee_scolaire]
+      );
+      const resteScolarite = Math.max(0, parseFloat(eleve.frais_scolarite_total) - parseFloat(dejaPaye));
+      if (resteScolarite <= 0) {
+        return res.status(400).json({ error: 'La scolarité de cet élève est déjà entièrement payée.' });
+      }
+      if (montantUSD > resteScolarite + 0.009) {
+        const surplusUSD = montantUSD - resteScolarite;
+        surplus = deviseSaisie === 'CDF' ? surplusUSD * taux : surplusUSD;
+        montantUSD = resteScolarite;
+        montantCDF = resteScolarite * taux;
+        montantSaisi = deviseSaisie === 'CDF' ? montantCDF : montantUSD;
+      }
+    }
+
+    const reference = genererReferencePaiement();
+    const [result] = await db.query(
+      `INSERT INTO paiements
+         (reference, eleve_id, type_paiement, montant, devise, montant_usd, montant_local, taux_change, mode_paiement, periode, description, comptable_id, annee_scolaire, date_paiement)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+      [reference, eleveId, type_paiement, montantSaisi, deviseSaisie, montantUSD, montantCDF, taux, mode_paiement, periode || null, description || null, req.user.id, annee]
+    );
+
+    await logActivite(req.user.id, 'Paiement enregistre', `Ref:${reference} Eleve:${eleveId} Montant:${montantSaisi} ${deviseSaisie} = ${montantUSD.toFixed(2)} USD${surplus > 0 ? ` (surplus rendu: ${surplus.toFixed(2)} ${deviseSaisie})` : ''}`, req.ip);
+
+    res.status(201).json({
+      id: result.insertId, reference,
+      ...(surplus > 0 ? { surplus: Math.round(surplus * 100) / 100, surplusDevise: deviseSaisie } : {}),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de l\'enregistrement du paiement.' });
   }
-
-  const ecole = await getEcole();
-  const devPrincipale = ecole?.devise || 'USD';
-  const deviseSaisie = devise || devPrincipale;
-  const taux = parseFloat(await getParam('taux_usd_cdf', '2800'));
-  const annee = await getParam('annee_scolaire_courante');
-
-  let montantUSD, montantCDF;
-  if (deviseSaisie === 'CDF') {
-    montantUSD = taux > 0 ? montantSaisi / taux : montantSaisi;
-    montantCDF = montantSaisi;
-  } else {
-    montantUSD = montantSaisi;
-    montantCDF = montantSaisi * taux;
-  }
-
-  const reference = genererReferencePaiement();
-  const [result] = await db.query(
-    `INSERT INTO paiements
-       (reference, eleve_id, type_paiement, montant, devise, montant_usd, montant_local, taux_change, mode_paiement, periode, description, comptable_id, annee_scolaire, date_paiement)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
-    [reference, eleveId, type_paiement, montantSaisi, deviseSaisie, montantUSD, montantCDF, taux, mode_paiement, periode || null, description || null, req.user.id, annee]
-  );
-
-  await logActivite(req.user.id, 'Paiement enregistre', `Ref:${reference} Eleve:${eleveId} Montant:${montantSaisi} ${deviseSaisie} = ${montantUSD.toFixed(2)} USD`, req.ip);
-
-  res.status(201).json({ id: result.insertId, reference });
 });
 
 module.exports = router;

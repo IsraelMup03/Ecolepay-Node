@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `matricule` (`matricule`),
   KEY `classe_id` (`classe_id`),
+  KEY `idx_eleves_statut_annee` (`statut`,`annee_scolaire`),
+  KEY `idx_eleves_classe_statut` (`classe_id`,`statut`),
   CONSTRAINT `fk_eleve_classe` FOREIGN KEY (`classe_id`) REFERENCES `classes` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -161,6 +163,9 @@ CREATE TABLE IF NOT EXISTS `paiements` (
   UNIQUE KEY `reference` (`reference`),
   KEY `eleve_id` (`eleve_id`),
   KEY `comptable_id` (`comptable_id`),
+  KEY `idx_paiements_eleve_statut_annee` (`eleve_id`,`statut`,`annee_scolaire`),
+  KEY `idx_paiements_annee_statut_type` (`annee_scolaire`,`statut`,`type_paiement`),
+  KEY `idx_paiements_date` (`date_paiement`),
   CONSTRAINT `fk_paiement_eleve` FOREIGN KEY (`eleve_id`) REFERENCES `eleves` (`id`),
   CONSTRAINT `fk_paiement_comptable` FOREIGN KEY (`comptable_id`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -183,6 +188,7 @@ CREATE TABLE IF NOT EXISTS `remboursements` (
   PRIMARY KEY (`id`),
   KEY `paiement_id` (`paiement_id`),
   KEY `eleve_id` (`eleve_id`),
+  KEY `idx_remb_paiement_statut` (`paiement_id`,`statut`),
   CONSTRAINT `fk_remb_paiement` FOREIGN KEY (`paiement_id`) REFERENCES `paiements` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -249,5 +255,6 @@ CREATE TABLE IF NOT EXISTS `archives_annuelles` (
   `statut_paiement` enum('solde','partiel','non_paye') DEFAULT 'non_paye',
   `date_archive` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `annee_eleve` (`annee_scolaire`,`eleve_id`)
+  UNIQUE KEY `annee_eleve` (`annee_scolaire`,`eleve_id`),
+  KEY `idx_archives_annee_classe` (`annee_scolaire`,`classe_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

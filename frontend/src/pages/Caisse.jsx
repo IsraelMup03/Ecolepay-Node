@@ -62,6 +62,9 @@ export default function Caisse() {
       setMontant(''); setPeriode(''); setDescription('');
       const info = await client.get(`/eleves/${selected.id}/caisse-info`);
       setCaisseInfo(info.data);
+      if (res.data.surplus) {
+        alert(`Seul le montant restant dû a été enregistré (la scolarité est maintenant soldée). Surplus à rendre : ${res.data.surplus.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${res.data.surplusDevise}.`);
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur lors de l\'enregistrement.');
     } finally {
@@ -118,7 +121,12 @@ export default function Caisse() {
                       <tr key={p.id}>
                         <td>{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                        <td><strong>{format(p.montant_usd)}</strong></td>
+                        <td>
+                          <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                          {p.montant_rembourse_usd > 0 && (
+                            <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {caisseInfo.historique.length === 0 && <tr><td className="text-muted">Aucun paiement encore.</td></tr>}

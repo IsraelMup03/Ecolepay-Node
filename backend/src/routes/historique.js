@@ -38,7 +38,8 @@ router.get('/:annee', async (req, res) => {
   );
   const [paiements] = await db.query(
     `SELECT p.id, p.reference, p.type_paiement, p.montant, p.devise, p.montant_usd, p.mode_paiement, p.statut, p.date_paiement,
-            e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+            e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
+            COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
      FROM paiements p
      JOIN eleves e ON e.id=p.eleve_id
      LEFT JOIN classes c ON c.id=e.classe_id

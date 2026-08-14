@@ -13,13 +13,14 @@ export default function Paiements() {
   const [debut, setDebut] = useState('');
   const [fin, setFin] = useState('');
   const [type, setType] = useState('');
+  const [statut, setStatut] = useState('valide');
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ total: 0, somme: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
-    const params = { p: page, q, classe_id: classeId, type };
+    const params = { p: page, q, classe_id: classeId, type, statut };
     if (viewingAnnee) params.annee = viewingAnnee;
     else { params.debut = debut; params.fin = fin; }
     const res = await client.get('/paiements', { params });
@@ -29,11 +30,11 @@ export default function Paiements() {
   }
 
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
-  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, classeId, debut, fin, type, page, viewingAnnee]);
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, classeId, debut, fin, type, statut, page, viewingAnnee]);
 
   function exportCsv() {
     const token = localStorage.getItem('ecolepay_token');
-    const params = { q, classe_id: classeId, type, devise };
+    const params = { q, classe_id: classeId, type, statut, devise };
     if (viewingAnnee) params.annee = viewingAnnee;
     else { params.debut = debut; params.fin = fin; }
     const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v))).toString();
@@ -76,6 +77,13 @@ export default function Paiements() {
             <option value="autre">Autre</option>
           </select>
         </div>
+        <div className="form-group">
+          <select value={statut} onChange={(e) => { setStatut(e.target.value); setPage(1); }}>
+            <option value="valide">Valides</option>
+            <option value="rembourse">Remboursés</option>
+            <option value="tous">Tous statuts</option>
+          </select>
+        </div>
         {!viewingAnnee && (
           <>
             <div className="form-group"><input type="date" value={debut} onChange={(e) => { setDebut(e.target.value); setPage(1); }} /></div>
@@ -99,17 +107,23 @@ export default function Paiements() {
       <div className="card">
         <div className="table-container">
           <table>
-            <thead><tr><th>Référence</th><th>Élève</th><th>Classe</th><th>Type</th><th>Montant</th><th>Mode</th><th>Date</th><th>Comptable</th><th></th></tr></thead>
+            <thead><tr><th>Référence</th><th>Élève</th><th>Classe</th><th>Type</th><th>Montant</th><th>Statut</th><th>Mode</th><th>Date</th><th>Comptable</th><th></th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={9}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
-              {!loading && rows.length === 0 && <tr><td colSpan={9}><div className="empty-state"><i className="ph ph-credit-card"></i><h3>Aucun paiement trouvé</h3></div></td></tr>}
+              {loading && <tr><td colSpan={10}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && rows.length === 0 && <tr><td colSpan={10}><div className="empty-state"><i className="ph ph-credit-card"></i><h3>Aucun paiement trouvé</h3></div></td></tr>}
               {rows.map((p) => (
                 <tr key={p.id}>
                   <td><code>{p.reference}</code></td>
                   <td>{p.prenom} {p.nom} <span className="text-muted">({p.matricule})</span></td>
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                  <td><strong>{format(p.montant_usd)}</strong></td>
+                  <td>
+                    <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                    {p.montant_rembourse_usd > 0 && (
+                      <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
+                    )}
+                  </td>
+                  <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
                   <td>{p.mode_paiement}</td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
