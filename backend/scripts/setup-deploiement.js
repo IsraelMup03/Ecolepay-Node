@@ -2,9 +2,9 @@
 // 1) cree backend/.env a partir de .env.example si absent, avec un JWT_SECRET unique
 //    genere aleatoirement (jamais le meme secret partage entre deux installations)
 // 2) genere le script de lancement "Lancer EcolePay.bat" avec le chemin absolu de cette
-//    installation, et cree un raccourci Windows (.lnk) sur le Bureau qui pointe dessus
-//    avec une vraie icone (le logo de l'ecole, converti en .ico) -- un .bat seul ne peut
-//    pas avoir d'icone personnalisee, contrairement a un raccourci .lnk.
+//    installation, et cree un raccourci Windows (.lnk) avec l'icone du logiciel -- sur le
+//    Bureau ET a la racine du dossier d'installation -- un .bat seul ne peut pas avoir
+//    d'icone personnalisee, contrairement a un raccourci .lnk.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -76,13 +76,17 @@ function ecrireLanceur(port) {
   return cheminBat;
 }
 
-// Cree un raccourci Windows (.lnk) sur le Bureau pointant vers le .bat, avec l'icone de
-// l'ecole. Un .lnk (contrairement a un .bat copie tel quel) affiche une vraie icone
-// d'application au lieu de l'icone generique "fichier de commandes".
-function creerRaccourciBureau(cheminBat) {
-  const bureau = path.join(os.homedir(), 'Desktop');
-  const cheminLnk = path.join(bureau, 'EcolePay.lnk');
+// Cree (ou remplace) un raccourci Windows (.lnk) a l'emplacement donne, pointant vers le
+// .bat, avec l'icone du logiciel. Un .lnk (contrairement a un .bat copie tel quel) affiche
+// une vraie icone d'application au lieu de l'icone generique "fichier de commandes".
+function creerRaccourci(cheminLnk, cheminBat) {
   const iconeDisponible = fs.existsSync(ICON_PATH);
+
+  // Supprime l'ancien raccourci s'il existe : garantit une reecriture complete plutot
+  // qu'une modification en place, pour eviter tout residu de l'ancienne icone.
+  if (fs.existsSync(cheminLnk)) {
+    try { fs.unlinkSync(cheminLnk); } catch (e) { /* ignore */ }
+  }
 
   const echapPs = (s) => s.replace(/'/g, "''");
   const ps = [
@@ -93,28 +97,37 @@ function creerRaccourciBureau(cheminBat) {
     `$S.Description = 'Lancer EcolePay'`,
     iconeDisponible ? `$S.IconLocation = '${echapPs(ICON_PATH)}'` : null,
     '$S.Save()',
+    // Force Windows Explorer a invalider son cache d'icones : sans ca, un raccourci
+    // recree avec une icone differente peut continuer d'afficher l'ancienne icone en
+    // cache jusqu'a un rafraichissement manuel (F5) ou un redemarrage de l'explorateur.
+    'Add-Type -Namespace Win32 -Name Shell -MemberDefinition \'[DllImport("shell32.dll")] public static extern void SHChangeNotify(int e, int f, IntPtr i1, IntPtr i2);\'',
+    '[Win32.Shell]::SHChangeNotify(0x8000000, 0x1000, [IntPtr]::Zero, [IntPtr]::Zero)',
   ].filter(Boolean).join('\r\n');
 
   // BOM UTF-8 indispensable : sans lui, PowerShell 5.1 lit ce script avec la page de code
   // ANSI du systeme et non en UTF-8, ce qui corrompt tout caractere accentue present dans
   // le chemin d'installation (ex: "Ecole Test Reseau") -- exactement le meme piege que
-  // pour le fichier .bat, corrige plus haut avec le meme remede (BOM + interpretation UTF-8
-  // explicite, ici via -Encoding UTF8 au lieu de chcp).
-  const psScriptPath = path.join(os.tmpdir(), `ecolepay-shortcut-${Date.now()}.ps1`);
+  // pour le fichier .bat, corrige plus haut avec le meme remede (BOM ici + chcp la-bas).
+  const psScriptPath = path.join(os.tmpdir(), `ecolepay-shortcut-${Date.now()}-${Math.random().toString(36).slice(2)}.ps1`);
   fs.writeFileSync(psScriptPath, '﻿' + ps, 'utf8');
   try {
     execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psScriptPath], { stdio: 'pipe' });
-    console.log(`Raccourci place sur le Bureau : ${cheminLnk}${iconeDisponible ? ' (avec icone)' : ''}`);
+    console.log(`Raccourci cree : ${cheminLnk}${iconeDisponible ? ' (avec icone)' : ''}`);
   } catch (e) {
-    console.log(`Impossible de creer le raccourci du Bureau (${e.message}).`);
-    console.log(`Vous pouvez lancer directement : ${cheminBat}`);
+    console.log(`Impossible de creer le raccourci "${cheminLnk}" (${e.message}).`);
   } finally {
     fs.unlinkSync(psScriptPath);
   }
 }
 
+function creerRaccourcis(cheminBat) {
+  const bureau = path.join(os.homedir(), 'Desktop');
+  creerRaccourci(path.join(bureau, 'EcolePay.lnk'), cheminBat);
+  creerRaccourci(path.join(ROOT, 'EcolePay.lnk'), cheminBat);
+}
+
 ensureEnv();
 const port = lirePort();
 const cheminBat = ecrireLanceur(port);
-creerRaccourciBureau(cheminBat);
+creerRaccourcis(cheminBat);
 console.log('\nConfiguration terminee.');
