@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
+const fs = require('fs');
 
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
@@ -46,6 +47,14 @@ app.use(express.urlencoded({ extended: true }));
 // Fichiers uploades (logos ecole, etc.)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// Sert le frontend deja compile (frontend/dist, genere par `npm run build`) : un seul
+// processus/port pour toute l'application, ce qui est plus simple a installer et a lancer
+// chez un client qu'un serveur Vite separe. N'a aucun effet en developpement puisque
+// frontend/dist n'existe que si le build a ete lance (le script d'installation le fait).
+const FRONTEND_DIST = path.join(__dirname, '../../frontend/dist');
+const SERVE_FRONTEND = fs.existsSync(FRONTEND_DIST);
+if (SERVE_FRONTEND) app.use(express.static(FRONTEND_DIST));
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', app: 'EcolePay API', version: '2.0.0' }));
 
 app.use('/api/auth', authRoutes);
@@ -64,6 +73,14 @@ app.use('/api/rapports', rapportsRoutes);
 app.use('/api/historique', historiqueRoutes);
 app.use('/api/recherche', rechercheRoutes);
 app.use('/api/comptabilite', comptabiliteRoutes);
+
+// Redirige toute route non-API/non-uploads vers index.html : c'est React Router (cote
+// client) qui decide alors quelle page afficher. Necessaire pour qu'un rechargement de
+// page sur une URL comme /eleves/12 fonctionne (sinon Express n'a aucune route pour ce
+// chemin et renverrait une 404 avant meme que React ne s'execute).
+if (SERVE_FRONTEND) {
+  app.get(/^\/(?!api|uploads).*/, (req, res) => res.sendFile(path.join(FRONTEND_DIST, 'index.html')));
+}
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {

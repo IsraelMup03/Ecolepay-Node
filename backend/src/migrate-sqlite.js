@@ -248,11 +248,14 @@ async function main() {
     await db.run('INSERT OR IGNORE INTO parametres (cle, valeur, description) VALUES (?,?,?)', [cle, valeur, null]);
   }
 
+  // premier_connexion=1 : une installation neuve (chez un client) doit forcer le
+  // changement du mot de passe par defaut avant toute utilisation, sinon chaque
+  // installation partagerait le meme mot de passe admin public/connu.
   const adminHash = await bcrypt.hash('Admin@2024', 10);
   await db.run(`INSERT OR IGNORE INTO utilisateurs (nom, prenom, email, mot_de_passe, role, permissions, actif, premier_connexion) VALUES (?,?,?,?,?,?,?,?)`,
-    ['Administrateur', 'Système', 'admin@ecolepay.com', adminHash, 'admin', JSON.stringify({ tout: true }), 1, 0]);
+    ['Administrateur', 'Système', 'admin@ecolepay.com', adminHash, 'admin', JSON.stringify({ tout: true }), 1, 1]);
 
-  await db.run(`UPDATE utilisateurs SET mot_de_passe = ?, permissions = ?, actif = 1, premier_connexion = 0 WHERE email = ?`,
+  await db.run(`UPDATE utilisateurs SET mot_de_passe = ?, permissions = ?, actif = 1, premier_connexion = 1 WHERE email = ?`,
     [adminHash, JSON.stringify({ tout: true }), 'admin@ecolepay.com']);
 
   await db.close();

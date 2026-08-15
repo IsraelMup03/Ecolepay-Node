@@ -57,9 +57,12 @@ CREATE TABLE IF NOT EXISTS `utilisateurs` (
 
 -- Admin par défaut: admin@ecolepay.com / Admin@2024
 -- (le hash sera régénéré proprement par le script de migration Node : npm run migrate)
+-- premier_connexion=1 : une installation neuve doit forcer le changement du mot de passe
+-- par defaut avant toute utilisation (sinon chaque installation partagerait le meme mot
+-- de passe admin public/connu).
 INSERT INTO `utilisateurs` (`nom`, `prenom`, `email`, `mot_de_passe`, `role`, `permissions`, `actif`, `premier_connexion`)
 SELECT * FROM (SELECT 'Administrateur' as a, 'Système' as b, 'admin@ecolepay.com' as c,
-  '$2a$10$CwTycUXWue0Thq9StjUM0uJ8Q9WwR9nZQ.tS0h6C1mI0v6t.mZmZ2' as d, 'admin' as e, '{"tout":true}' as f, 1 as g, 0 as h) AS tmp
+  '$2a$10$CwTycUXWue0Thq9StjUM0uJ8Q9WwR9nZQ.tS0h6C1mI0v6t.mZmZ2' as d, 'admin' as e, '{"tout":true}' as f, 1 as g, 1 as h) AS tmp
 WHERE NOT EXISTS (SELECT 1 FROM `utilisateurs` WHERE email = 'admin@ecolepay.com');
 
 -- ============================================================
