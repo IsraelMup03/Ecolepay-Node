@@ -111,7 +111,33 @@ app.use((err, req, res, next) => {
 
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 
+// Adresse(s) reseau local (LAN) de cette machine : le serveur ecoute deja sur toutes les
+// interfaces (app.listen sans hote precis = 0.0.0.0), donc d'autres postes du meme reseau
+// peuvent s'y connecter sans configuration supplementaire -- il suffit de leur communiquer
+// cette adresse. Utile pour un usage multi-utilisateurs (plusieurs postes de l'ecole).
+function adressesReseauLocal() {
+  const interfaces = require('os').networkInterfaces();
+  const adresses = [];
+  for (const nom of Object.keys(interfaces)) {
+    for (const iface of interfaces[nom]) {
+      if (iface.family === 'IPv4' && !iface.internal) adresses.push(iface.address);
+    }
+  }
+  return adresses;
+}
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`EcolePay API demarree sur http://localhost:${PORT}`);
+  const adresses = adressesReseauLocal();
+  console.log('========================================');
+  console.log(' EcolePay demarre !');
+  console.log('========================================');
+  console.log(` Sur cet ordinateur : http://localhost:${PORT}`);
+  if (adresses.length) {
+    console.log(' Depuis un autre poste du meme reseau (Wi-Fi/cable) :');
+    adresses.forEach((a) => console.log(`   http://${a}:${PORT}`));
+  } else {
+    console.log(' (Aucune adresse reseau local detectee - acces uniquement depuis cet ordinateur.)');
+  }
+  console.log('========================================');
 });
