@@ -51,9 +51,27 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // processus/port pour toute l'application, ce qui est plus simple a installer et a lancer
 // chez un client qu'un serveur Vite separe. N'a aucun effet en developpement puisque
 // frontend/dist n'existe que si le build a ete lance (le script d'installation le fait).
+//
+// Cache-Control explicite : les fichiers dans /assets ont un nom unique par build (hash
+// de contenu genere par Vite), donc peuvent etre mis en cache longtemps sans risque.
+// index.html en revanche change de contenu (il reference les nouveaux noms de fichiers)
+// sans que son propre nom change : s'il reste en cache navigateur apres une reinstallation
+// ou une mise a jour, le navigateur continue a demander les ANCIENS fichiers /assets qui
+// n'existent plus (supprimes par le nouveau build) -> ecran blanc avec des 404 en console.
+// "no-cache" force donc une revalidation systematique pour index.html uniquement.
 const FRONTEND_DIST = path.join(__dirname, '../../frontend/dist');
 const SERVE_FRONTEND = fs.existsSync(FRONTEND_DIST);
-if (SERVE_FRONTEND) app.use(express.static(FRONTEND_DIST));
+if (SERVE_FRONTEND) {
+  app.use(express.static(FRONTEND_DIST, {
+    setHeaders: (res, filePath) => {
+      if (path.basename(filePath) === 'index.html') {
+        res.setHeader('Cache-Control', 'no-cache');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
+}
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', app: 'EcolePay API', version: '2.0.0' }));
 
@@ -79,7 +97,10 @@ app.use('/api/comptabilite', comptabiliteRoutes);
 // page sur une URL comme /eleves/12 fonctionne (sinon Express n'a aucune route pour ce
 // chemin et renverrait une 404 avant meme que React ne s'execute).
 if (SERVE_FRONTEND) {
-  app.get(/^\/(?!api|uploads).*/, (req, res) => res.sendFile(path.join(FRONTEND_DIST, 'index.html')));
+  app.get(/^\/(?!api|uploads).*/, (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
 }
 
 // Gestion des erreurs globales

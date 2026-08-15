@@ -69,12 +69,27 @@ popd
 
 echo.
 echo [4/4] Configuration ^(cle de securite, base de donnees, raccourci de lancement^)...
+if not exist "backend\database" mkdir "backend\database"
+if not exist "backend\uploads" mkdir "backend\uploads"
 if not exist "backend\database\ecolepay.sqlite" (
     echo   - Creation d'une base de donnees vierge...
     pushd backend
     call npm run migrate:sqlite
     popd
 )
+
+:: Autorise les utilisateurs standards (compte S-1-5-32-545 = "Users", identifiant
+:: independant de la langue de Windows) a lire/ecrire la base de donnees et les fichiers
+:: uploades (logo de l'ecole), meme si le reste du dossier "Programmes" reste protege.
+:: Necessaire car l'installation se fait avec les droits administrateur, mais le logiciel
+:: sera ensuite lance au quotidien par un compte standard qui doit pouvoir modifier ces
+:: donnees (sans ca : erreur "SQLITE_READONLY" a chaque tentative d'enregistrement).
+:: /T = applique aussi aux fichiers deja presents (ex: ecolepay.sqlite deja cree), pas
+:: seulement aux futurs fichiers -- indispensable en cas de reinstallation/reparation sur
+:: une base de donnees existante.
+icacls "backend\database" /grant *S-1-5-32-545:(OI)(CI)M /T >nul 2>&1
+icacls "backend\uploads" /grant *S-1-5-32-545:(OI)(CI)M /T >nul 2>&1
+
 node backend\scripts\setup-deploiement.js
 
 echo.

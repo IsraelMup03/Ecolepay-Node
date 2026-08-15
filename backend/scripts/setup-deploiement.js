@@ -35,16 +35,29 @@ function lirePort() {
 }
 
 function genererLanceur(port) {
+  // chcp 65001 (+ le BOM UTF-8 ecrit plus bas) : sans ca, un chemin d'installation
+  // contenant un caractere accentue (ex: "EcolePay developpe FOX group") est mal
+  // interprete par cmd.exe selon la page de code active du systeme, ce qui corrompt
+  // le chemin et fait echouer le "cd /d" avec "chemin d'acces introuvable" -- le
+  // script continue alors depuis le mauvais dossier et npm start echoue silencieusement.
   const lignes = [
     '@echo off',
+    'chcp 65001 >nul',
     'title EcolePay',
     `cd /d "${BACKEND_DIR}"`,
+    'if errorlevel 1 (',
+    `  echo [ERREUR] Dossier d'installation introuvable : "${BACKEND_DIR}"`,
+    "  echo Le dossier a peut-etre ete deplace ou renomme apres l'installation.",
+    "  echo Relancez install.bat depuis son emplacement actuel pour regenerer ce raccourci.",
+    '  pause',
+    '  exit /b 1',
+    ')',
     "echo Demarrage d'EcolePay...",
     'start "EcolePay - Serveur (ne pas fermer cette fenetre)" /min cmd /c "npm start"',
     'timeout /t 4 /nobreak >nul',
     `start "" "http://localhost:${port}"`,
   ];
-  return lignes.join('\r\n') + '\r\n';
+  return '﻿' + lignes.join('\r\n') + '\r\n';
 }
 
 function installerLanceur() {
