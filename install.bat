@@ -97,6 +97,8 @@ echo ============================================
 echo   Installation terminee !
 echo   Un raccourci "Lancer EcolePay" a ete place sur le Bureau.
 echo   Double-cliquez dessus pour demarrer le logiciel.
+echo   Les autres postes du reseau de l'ecole pourront s'y connecter avec
+echo   l'adresse affichee au demarrage du serveur (fenetre "EcolePay - Serveur").
 echo ============================================
 echo.
 pause

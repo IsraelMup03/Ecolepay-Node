@@ -126,8 +126,35 @@ function creerRaccourcis(cheminBat) {
   creerRaccourci(path.join(ROOT, 'EcolePay.lnk'), cheminBat);
 }
 
+// Autorise les autres postes du meme reseau (Wi-Fi/cable de l'ecole) a se connecter au
+// serveur : sans regle de pare-feu explicite, Windows bloque par defaut les connexions
+// entrantes venant d'un autre ordinateur (seul cet ordinateur, via localhost, passerait).
+// Les 3 profils (prive/domaine/public) sont autorises : un PC d'ecole qui n'est pas
+// rattache a un domaine Windows garde tres souvent son reseau classe "public" par Windows
+// meme quand c'est bien le reseau local de l'ecole (Windows ne le reclasse "prive" que si
+// on le lui demande explicitement) -- limiter aux 2 premiers profils faisait donc echouer
+// l'acces reseau, silencieusement, sur ce cas tres frequent.
+function configurerParefeu(port) {
+  const nomRegle = 'EcolePay';
+  try {
+    execFileSync('netsh', ['advfirewall', 'firewall', 'delete', 'rule', `name=${nomRegle}`], { stdio: 'pipe' });
+  } catch (e) { /* pas grave si la regle n'existait pas encore */ }
+  try {
+    execFileSync('netsh', [
+      'advfirewall', 'firewall', 'add', 'rule',
+      `name=${nomRegle}`, 'dir=in', 'action=allow', 'protocol=TCP',
+      `localport=${port}`, 'profile=any',
+    ], { stdio: 'pipe' });
+    console.log(`Pare-feu configure : les autres postes du reseau de l'ecole peuvent se connecter sur le port ${port}.`);
+  } catch (e) {
+    console.log(`Impossible de configurer le pare-feu automatiquement (droits administrateur requis).`);
+    console.log(`Au premier lancement, si Windows demande d'autoriser Node.js, cochez au moins "Reseaux prives" et cliquez sur "Autoriser l'acces".`);
+  }
+}
+
 ensureEnv();
 const port = lirePort();
 const cheminBat = ecrireLanceur(port);
 creerRaccourcis(cheminBat);
+configurerParefeu(port);
 console.log('\nConfiguration terminee.');

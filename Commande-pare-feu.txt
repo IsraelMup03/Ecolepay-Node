@@ -1,0 +1,36 @@
+EcolePay - Autoriser la connexion depuis d'autres postes du reseau
+====================================================================
+
+A utiliser si un autre ordinateur de l'ecole n'arrive pas a se connecter
+au logiciel alors qu'il est bien sur le meme reseau (Wi-Fi ou cable).
+
+MARCHE A SUIVRE
+----------------
+1. Sur l'ordinateur ou EcolePay est installe, cliquez sur le menu Demarrer.
+2. Tapez : cmd
+3. Faites un clic droit sur "Invite de commandes" et choisissez
+   "Executer en tant qu'administrateur" (acceptez la fenetre qui demande
+   confirmation).
+4. Copiez-collez la commande ci-dessous dans cette fenetre, puis appuyez
+   sur Entree.
+
+COMMANDE A COPIER-COLLER
+-------------------------
+netsh advfirewall firewall add rule name=EcolePay dir=in action=allow protocol=TCP localport=5055 profile=any
+
+(Si le port a ete change lors de l'installation, remplacez 5055 par le
+bon numero - il est affiche dans la fenetre "EcolePay - Serveur" au
+demarrage du logiciel.)
+
+5. Reessayez de vous connecter depuis l'autre ordinateur, avec l'adresse
+   affichee dans la fenetre "EcolePay - Serveur" (ex: http://192.168.x.x:5055).
+
+SI CA NE MARCHE TOUJOURS PAS
+------------------------------
+- Verifiez qu'aucune fenetre Windows n'a ete refusee/annulee au tout
+  premier lancement du logiciel (une fenetre de pare-feu peut apparaitre
+  la premiere fois : il faut cliquer sur "Autoriser l'acces").
+- Verifiez que le routeur/box Wi-Fi de l'ecole n'a pas d'option
+  "isolation des appareils" ou "reseau invite" activee - dans ce cas,
+  aucune commande logicielle ne peut resoudre le probleme, il faut
+  desactiver cette option dans les parametres du routeur.
