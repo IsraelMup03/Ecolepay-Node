@@ -44,7 +44,7 @@ router.get('/:id/stats', async (req, res) => {
   const [[stats]] = await db.query(
     `SELECT COUNT(*) as nb_eleves,
             COALESCE(SUM(frais_scolarite_total),0) as total_attendu,
-            COALESCE(SUM((SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide')),0) as total_paye
+            COALESCE(SUM((SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite')),0) as total_paye
      FROM eleves e WHERE e.classe_id=? AND e.statut='actif'`,
     [id]
   );

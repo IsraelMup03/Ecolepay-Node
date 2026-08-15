@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { genererReferencePaiement, logActivite, getEcole, getParam } = require('../utils/helpers');
@@ -6,15 +7,33 @@ const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils
 
 const router = express.Router();
 
-// GET /api/paiements/:id/verify  (verification du recu public)
-router.get('/:id/verify', async (req, res) => {
-  const { id } = req.params;
+// Limite les scans/appels repetes sur la verification publique de recu : la reference
+// n'est pas sequentielle (contrairement a l'id) mais reste theoriquement brute-forcable
+// sans ce garde-fou.
+const verifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de verifications. Reessayez dans quelques minutes.' },
+});
+
+// GET /api/paiements/verify/:reference  (verification du recu public, sans authentification)
+// Recherche par reference (chaine semi-aleatoire, ex: PAY-20260814-AB12CD) et non par id :
+// l'id est une cle auto-incrementee sequentielle, ce qui aurait permis a quiconque
+// d'enumerer /verify/1, /verify/2, ... et de recuperer tous les paiements de l'ecole
+// sans authentification. On ne selectionne aussi que les champs necessaires a l'affichage
+// du recu, pas p.* (qui exposait aussi des colonnes internes comme comptable_id, taux_change...).
+router.get('/verify/:reference', verifyLimiter, async (req, res) => {
+  const { reference } = req.params;
   const [[p]] = await db.query(
-    `SELECT p.*, e.nom as e_nom, e.prenom as e_prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
+    `SELECT p.reference, p.montant, p.devise, p.type_paiement, p.date_paiement,
+            e.nom as e_nom, e.prenom as e_prenom, e.matricule, c.nom as classe,
+            u.prenom as cpt_prenom, u.nom as cpt_nom
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
      LEFT JOIN utilisateurs u ON u.id=p.comptable_id
-     WHERE p.id=?`,
-    [id]
+     WHERE p.reference=? AND p.statut IN ('valide','rembourse')`,
+    [reference]
   );
   if (!p) return res.status(404).json({ error: 'Reçu introuvable.' });
 

@@ -58,4 +58,18 @@ function requirePermission(perm) {
   };
 }
 
-module.exports = { requireAuth, requireAdmin, requirePermission };
+/**
+ * Autorise si l'utilisateur a AU MOINS UNE des permissions listees
+ * (utile quand une meme route est legitimement consommee par plusieurs
+ * pages qui n'exigent pas la meme permission cote frontend).
+ */
+function requireAnyPermission(...perms) {
+  return (req, res, next) => {
+    if (!perms.some((p) => hasPermission(req.user, p))) {
+      return res.status(403).json({ error: `Permission requise: ${perms.join(' ou ')}.` });
+    }
+    next();
+  };
+}
+
+module.exports = { requireAuth, requireAdmin, requirePermission, requireAnyPermission };

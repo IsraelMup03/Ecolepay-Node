@@ -61,15 +61,18 @@ export default function Parametres() {
 
   async function reinitialiser() {
     if (confirmation !== 'CONFIRMER') return;
-    if (!window.confirm('Dernière confirmation : TOUTES les données (élèves, classes, paiements) seront définitivement supprimées. Continuer ?')) return;
+    if (!window.confirm("Dernière confirmation : TOUT sera définitivement supprimé (élèves, classes, paiements, dépenses, historique, corbeille, journal d'activité, et tous les comptes utilisateurs sauf le vôtre). Le profil de l'école et les paramètres système seront aussi remis à zéro. Continuer ?")) return;
     setResetLoading(true);
     try {
       await client.post('/parametres/reinitialiser', { confirmation });
-      setNotice('Application réinitialisée avec succès.');
+      setNotice('Application réinitialisée avec succès. Rechargement...');
       setConfirmation('');
+      // Rechargement complet (et non une simple navigation cote client) : le profil ecole,
+      // la devise/le taux et la liste des utilisateurs ont tous change, il faut repartir
+      // d'un etat frontend totalement frais plutot que de rafraichir chaque contexte un par un.
+      setTimeout(() => { window.location.href = '/'; }, 1500);
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur.');
-    } finally {
       setResetLoading(false);
     }
   }
@@ -122,7 +125,7 @@ export default function Parametres() {
         <div className="card" style={{ borderColor: '#fecaca' }}>
           <div className="card-header"><i className="ph ph-warning-circle" style={{ color: 'var(--danger)' }}></i><h3 style={{ color: 'var(--danger)' }}>Zone dangereuse</h3></div>
           <div className="card-body">
-            <p className="text-muted mb-16">Cette action supprime définitivement tous les élèves, classes et paiements. Elle est irréversible. Tapez <code>CONFIRMER</code> pour activer le bouton.</p>
+            <p className="text-muted mb-16">Cette action remet le logiciel à l'état d'un tout premier lancement : élèves, classes, paiements, remboursements, dépenses, historique, corbeille, journal d'activité, tous les comptes utilisateurs (sauf le vôtre), ainsi que le profil de l'école et les paramètres système sont supprimés ou remis à zéro. Elle est irréversible. Tapez <code>CONFIRMER</code> pour activer le bouton.</p>
             <div className="flex gap-8">
               <input placeholder="Tapez CONFIRMER" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} style={{ maxWidth: 240, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8 }} />
               <button className="btn btn-danger" disabled={confirmation !== 'CONFIRMER' || resetLoading} onClick={reinitialiser}>

@@ -54,7 +54,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/changer-mot-de-passe" element={<ChangerMotDePasse />} />
       <Route path="/recu/:id" element={<ProtectedRoute><Recu /></ProtectedRoute>} />
-      <Route path="/recu/:id/verify" element={<RecuVerify />} />
+      <Route path="/recu/verify/:reference" element={<RecuVerify />} />
 
       <Route path="/" element={<Page><Dashboard /></Page>} />
       <Route path="/caisse" element={<Page perm="paiements"><Caisse /></Page>} />

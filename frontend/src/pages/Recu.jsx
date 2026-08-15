@@ -55,7 +55,7 @@ export default function Recu() {
   if (!data) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement du reçu...</p></div>;
 
   const { paiement: p, resteApres, pctPaye, ecole } = data;
-  const receiptPath = `/recu/${id}/verify`;
+  const receiptPath = `/recu/verify/${p.reference}`;
   const portPart = typeof window !== 'undefined' && window.location.port ? `:${window.location.port}` : '';
   const receiptUrl = typeof window !== 'undefined' ? (() => {
     if (localIp) {

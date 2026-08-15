@@ -16,6 +16,7 @@ export default function Historique() {
   const [annee, setAnnee] = useState(null);
   const [data, setData] = useState(null);
   const [page, setPage] = useState(1);
+  const [pageSituation, setPageSituation] = useState(1);
   const [tab, setTab] = useState('paiements');
 
   useEffect(() => {
@@ -30,13 +31,14 @@ export default function Historique() {
 
   useEffect(() => {
     if (!annee) return;
-    client.get(`/historique/${annee}`, { params: { p: page } }).then((res) => setData(res.data));
-  }, [annee, page]);
+    client.get(`/historique/${annee}`, { params: { p: page, ps: pageSituation } }).then((res) => setData(res.data));
+  }, [annee, page, pageSituation]);
 
   function selectAnnee(a) {
     setData(null);
     setAnnee(a);
     setPage(1);
+    setPageSituation(1);
     setTab('paiements');
   }
 
@@ -81,7 +83,7 @@ export default function Historique() {
           <div className="tabs">
             <button className={tab === 'paiements' ? 'active' : ''} onClick={() => setTab('paiements')}>Paiements ({data.total})</button>
             <button className={tab === 'remboursements' ? 'active' : ''} onClick={() => setTab('remboursements')}>Remboursements ({data.remboursements.length})</button>
-            <button className={tab === 'situation' ? 'active' : ''} onClick={() => setTab('situation')}>Situation par élève ({data.situation.length})</button>
+            <button className={tab === 'situation' ? 'active' : ''} onClick={() => setTab('situation')}>Situation par élève ({data.situationTotal})</button>
           </div>
 
           {tab === 'paiements' && (
@@ -170,6 +172,13 @@ export default function Historique() {
                   </tbody>
                 </table>
               </div>
+              {data.situationTotalPages > 1 && (
+                <div className="pagination">
+                  <button className="btn btn-outline btn-sm" disabled={pageSituation <= 1} onClick={() => setPageSituation((p) => p - 1)}>Précédent</button>
+                  <span className="text-muted" style={{ padding: '6px 10px' }}>Page {pageSituation} / {data.situationTotalPages}</span>
+                  <button className="btn btn-outline btn-sm" disabled={pageSituation >= data.situationTotalPages} onClick={() => setPageSituation((p) => p + 1)}>Suivant</button>
+                </div>
+              )}
             </div>
           )}
         </>

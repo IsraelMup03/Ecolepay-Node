@@ -11,7 +11,7 @@ router.use(requireAuth);
 // (change du a un depassement) : ce sont deux mecanismes distincts (voir paiements.js),
 // mais du point de vue de l'utilisateur ce sont toutes les deux des sommes dues a rendre
 // a une famille, donc elles apparaissent ensemble dans cette liste.
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('remboursements'), async (req, res) => {
   const anneeFiltre = req.query.annee || await getParam('annee_scolaire_courante');
   const [rows] = await db.query(
     `SELECT r.*, p.reference as pay_ref, p.montant as pay_montant, p.devise as pay_devise, p.annee_scolaire,

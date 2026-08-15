@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
@@ -33,6 +34,11 @@ process.on('uncaughtException', (err) => {
 
 const app = express();
 
+// contentSecurityPolicy desactive : ce serveur ne rend aucun HTML (API JSON + fichiers
+// uploades uniquement), la CSP n'a donc aucun effet utile ici et complique les tests.
+// crossOriginResourcePolicy assoupli en cross-origin : le frontend Vite (port 5173) charge
+// le logo de l'ecole depuis /uploads sur ce serveur (port 5055) = deux origines distinctes.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

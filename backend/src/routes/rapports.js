@@ -133,9 +133,9 @@ router.get('/', async (req, res) => {
   const [parClasse] = await db.query(
     `SELECT c.id, c.nom as classe,
             COUNT(DISTINCT e.id) as nb_eleves,
-            COALESCE(SUM((SELECT COALESCE(SUM(p2.montant_usd),0) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.annee_scolaire=e.annee_scolaire)),0) as total_paye,
+            COALESCE(SUM((SELECT COALESCE(SUM(p2.montant_usd),0) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.type_paiement='scolarite' AND p2.annee_scolaire=e.annee_scolaire)),0) as total_paye,
             COALESCE(SUM(e.frais_scolarite_total),0) as total_attendu,
-            SUM(CASE WHEN (SELECT COALESCE(SUM(p3.montant_usd),0) FROM paiements p3 WHERE p3.eleve_id=e.id AND p3.statut='valide' AND p3.annee_scolaire=e.annee_scolaire) >= e.frais_scolarite_total THEN 1 ELSE 0 END) as nb_soldes
+            SUM(CASE WHEN (SELECT COALESCE(SUM(p3.montant_usd),0) FROM paiements p3 WHERE p3.eleve_id=e.id AND p3.statut='valide' AND p3.type_paiement='scolarite' AND p3.annee_scolaire=e.annee_scolaire) >= e.frais_scolarite_total THEN 1 ELSE 0 END) as nb_soldes
      FROM classes c LEFT JOIN eleves e ON e.classe_id=c.id AND e.statut='actif'
      WHERE c.actif=1 ${classeFiltre}
      GROUP BY c.id ORDER BY c.ordre ASC, c.nom ASC`,
@@ -159,22 +159,23 @@ router.get('/', async (req, res) => {
     params
   );
 
-  // Eleves soldes / non soldes (listes detaillees)
+  // Eleves soldes / non soldes (listes detaillees) - "solde" compare la scolarite payee
+  // (et non le total tous frais confondus) au frais_scolarite_total attendu.
   const [elevesSoldes] = await db.query(
     `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe, e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      WHERE e.statut='actif' ${classe_id ? 'AND e.classe_id=?' : ''}
-     AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)
+     AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)
      ORDER BY e.nom ASC`,
     classe_id ? [classe_id] : []
   );
   const [elevesNonSoldes] = await db.query(
     `SELECT e.id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe, e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      WHERE e.statut='actif' ${classe_id ? 'AND e.classe_id=?' : ''}
-     AND e.frais_scolarite_total > (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)
+     AND e.frais_scolarite_total > (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)
      ORDER BY e.nom ASC`,
     classe_id ? [classe_id] : []
   );
@@ -260,7 +261,7 @@ router.get('/download/eleves.xlsx', async (req, res) => {
         : "DATE_FORMAT(p2.date_paiement, '%Y-%m-%d %H:%i:%s')";
 
       const params = [];
-      const paidSub = `(SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)`;
+      const paidSub = `(SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)`;
       let statusCondition = '';
       if (status === 'solde') {
         statusCondition = `AND e.frais_scolarite_total <= ${paidSub}`;
@@ -275,8 +276,8 @@ router.get('/download/eleves.xlsx', async (req, res) => {
 
       [rows] = await db.query(
         `SELECT e.matricule, e.nom, e.prenom, c.nom as classe,
-                COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
-                COALESCE(e.frais_scolarite_total,0) - COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as reste,
+                COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
+                COALESCE(e.frais_scolarite_total,0) - COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as reste,
                 (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as date_paiement,
                 (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
          FROM eleves e JOIN classes c ON c.id=e.classe_id
@@ -347,9 +348,9 @@ router.get('/download/par-classe.xlsx', async (req, res) => {
       [rows] = await db.query(
         `SELECT c.nom as classe,
                 COUNT(DISTINCT e.id) as nb_eleves,
-                COALESCE(SUM((SELECT COALESCE(SUM(p2.montant_usd),0) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.annee_scolaire=e.annee_scolaire)),0) as total_paye,
+                COALESCE(SUM((SELECT COALESCE(SUM(p2.montant_usd),0) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.type_paiement='scolarite' AND p2.annee_scolaire=e.annee_scolaire)),0) as total_paye,
                 COALESCE(SUM(e.frais_scolarite_total),0) as total_attendu,
-                SUM(CASE WHEN (SELECT COALESCE(SUM(p3.montant_usd),0) FROM paiements p3 WHERE p3.eleve_id=e.id AND p3.statut='valide' AND p3.annee_scolaire=e.annee_scolaire) >= e.frais_scolarite_total THEN 1 ELSE 0 END) as nb_soldes
+                SUM(CASE WHEN (SELECT COALESCE(SUM(p3.montant_usd),0) FROM paiements p3 WHERE p3.eleve_id=e.id AND p3.statut='valide' AND p3.type_paiement='scolarite' AND p3.annee_scolaire=e.annee_scolaire) >= e.frais_scolarite_total THEN 1 ELSE 0 END) as nb_soldes
          FROM classes c LEFT JOIN eleves e ON e.classe_id=c.id AND e.statut='actif'
          WHERE c.actif=1 ${classeFiltre}
          GROUP BY c.id ORDER BY c.ordre ASC, c.nom ASC`,

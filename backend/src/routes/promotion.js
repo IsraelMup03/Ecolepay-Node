@@ -12,7 +12,7 @@ router.get('/preview', requirePermission('promotion'), async (req, res) => {
     `SELECT e.id, e.nom, e.prenom, e.statut, e.redoublant, e.frais_scolarite_total,
             c.nom as classe_actuelle, cs.nom as classe_suivante, cs.id as classe_suivante_id,
             cs.frais_scolarite as nouveaux_frais, cs.frais_inscription as nouvelle_inscription,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e
      JOIN classes c ON c.id=e.classe_id
      LEFT JOIN classes cs ON cs.id=c.classe_superieure_id
@@ -33,10 +33,14 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // 1. Archiver la situation financiere de l'annee qui se termine
+    // 1. Archiver la situation financiere de l'annee qui se termine. total_paye ne compte
+    // que la scolarite (comme frais_scolarite_total, auquel il est compare pour deriver
+    // statut_paiement) : les frais d'inscription/divers ("autre") sont suivis separement
+    // et ne doivent pas gonfler artificiellement le "soldé" d'un eleve qui n'a en realite
+    // rien paye de sa scolarite.
     const [elevesActifs] = await conn.query(
       `SELECT e.id, e.classe_id, e.frais_scolarite_total,
-              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=?),0) as total_paye
+              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=?),0) as total_paye
        FROM eleves e WHERE e.statut='actif'`,
       [annee]
     );

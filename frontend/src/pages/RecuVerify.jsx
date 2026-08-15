@@ -7,7 +7,7 @@ function fmt(n, devise = 'USD') {
 }
 
 export default function RecuVerify() {
-  const { id } = useParams();
+  const { reference } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,7 +18,7 @@ export default function RecuVerify() {
       setLoading(true);
       setError('');
       try {
-        const res = await client.get(`/paiements/${id}/verify`);
+        const res = await client.get(`/paiements/verify/${reference}`);
         setData(res.data);
       } catch (err) {
         setError(err.response?.data?.error || 'Impossible de vérifier ce reçu.');
@@ -27,7 +27,7 @@ export default function RecuVerify() {
       }
     }
     load();
-  }, [id]);
+  }, [reference]);
 
   if (loading) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Vérification en cours...</p></div>;
   if (error) return <div className="alert alert-danger">{error}</div>;

@@ -98,7 +98,7 @@ router.get('/', async (req, res) => {
 
   const [[{ elevesSoldes }]] = await db.query(
     `SELECT COUNT(*) as elevesSoldes FROM eleves e WHERE e.statut='actif' AND e.annee_scolaire=?
-     AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)`,
+     AND e.frais_scolarite_total <= (SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)`,
     [annee]
   );
   const elevesNonSoldes = totalEleves - elevesSoldes;
@@ -118,7 +118,7 @@ router.get('/', async (req, res) => {
 
   const [parClasse] = await db.query(
     `SELECT c.nom as classe, COUNT(DISTINCT e.id) as nb_eleves,
-            COALESCE(SUM((SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye,
+            COALESCE(SUM((SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye,
             COALESCE(SUM(e.frais_scolarite_total),0) as total_attendu
      FROM classes c LEFT JOIN eleves e ON e.classe_id=c.id AND e.statut='actif'
      WHERE c.actif=1 GROUP BY c.id ORDER BY total_paye DESC LIMIT 8`

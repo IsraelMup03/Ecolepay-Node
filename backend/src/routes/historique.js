@@ -22,12 +22,18 @@ router.get('/annees', async (req, res) => {
   res.json({ annees, anneeCourante });
 });
 
-// GET /api/historique/:annee?p=1  (tout ce qui s'est passe durant une annee scolaire)
+// GET /api/historique/:annee?p=1&ps=1  (tout ce qui s'est passe durant une annee scolaire)
 router.get('/:annee', async (req, res) => {
   const { annee } = req.params;
   const page = Math.max(1, parseInt(req.query.p, 10) || 1);
   const perPage = 25;
   const offset = (page - 1) * perPage;
+  // Pagination separee pour l'onglet "Situation par eleve" : une grosse ecole apres
+  // plusieurs annees peut avoir des milliers d'eleves archives sur une meme annee, un
+  // tableau non pagine cote client devient alors injouable (des milliers de <tr>).
+  const pageSituation = Math.max(1, parseInt(req.query.ps, 10) || 1);
+  const perPageSituation = 50;
+  const offsetSituation = (pageSituation - 1) * perPageSituation;
   const anneeCourante = await getParam('annee_scolaire_courante');
 
   const [[{ total }]] = await db.query('SELECT COUNT(*) as total FROM paiements WHERE annee_scolaire=?', [annee]);
@@ -65,26 +71,30 @@ router.get('/:annee', async (req, res) => {
   // Situation financiere par eleve : archive figee si l'annee est cloturee,
   // sinon calcul live pour l'annee scolaire en cours (pas encore archivee).
   let situation = [];
-  const [archiveRows] = await db.query(
-    `SELECT a.eleve_id, a.classe_id, a.frais_scolarite_total, a.total_paye, a.statut_paiement,
-            e.nom, e.prenom, e.matricule, e.genre, c.nom as classe_nom
-     FROM archives_annuelles a
-     JOIN eleves e ON e.id=a.eleve_id
-     LEFT JOIN classes c ON c.id=a.classe_id
-     WHERE a.annee_scolaire=?
-     ORDER BY e.nom ASC`,
-    [annee]
-  );
-  if (archiveRows.length) {
-    situation = archiveRows;
+  let situationTotal = 0;
+  const [[{ nb: archiveCount }]] = await db.query('SELECT COUNT(*) as nb FROM archives_annuelles WHERE annee_scolaire=?', [annee]);
+  if (archiveCount > 0) {
+    situationTotal = archiveCount;
+    [situation] = await db.query(
+      `SELECT a.eleve_id, a.classe_id, a.frais_scolarite_total, a.total_paye, a.statut_paiement,
+              e.nom, e.prenom, e.matricule, e.genre, c.nom as classe_nom
+       FROM archives_annuelles a
+       JOIN eleves e ON e.id=a.eleve_id
+       LEFT JOIN classes c ON c.id=a.classe_id
+       WHERE a.annee_scolaire=?
+       ORDER BY e.nom ASC LIMIT ${perPageSituation} OFFSET ${offsetSituation}`,
+      [annee]
+    );
   } else if (annee === anneeCourante) {
+    const [[{ nb: liveCount }]] = await db.query("SELECT COUNT(*) as nb FROM eleves WHERE statut='actif'");
+    situationTotal = liveCount;
     const [liveRows] = await db.query(
       `SELECT e.id as eleve_id, e.classe_id, e.nom, e.prenom, e.matricule, e.genre, c.nom as classe_nom,
               e.frais_scolarite_total,
-              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=?),0) as total_paye
+              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=?),0) as total_paye
        FROM eleves e LEFT JOIN classes c ON c.id=e.classe_id
        WHERE e.statut='actif'
-       ORDER BY e.nom ASC`,
+       ORDER BY e.nom ASC LIMIT ${perPageSituation} OFFSET ${offsetSituation}`,
       [annee]
     );
     situation = liveRows.map((r) => ({
@@ -96,13 +106,16 @@ router.get('/:annee', async (req, res) => {
   res.json({
     annee,
     estAnneeCourante: annee === anneeCourante,
-    resume: { ...resume, nb_remboursements: remboursements.length, nb_eleves: situation.length },
+    resume: { ...resume, nb_remboursements: remboursements.length, nb_eleves: situationTotal },
     paiements,
     total,
     page,
     totalPages: Math.max(1, Math.ceil(total / perPage)),
     remboursements,
     situation,
+    situationTotal,
+    pageSituation,
+    situationTotalPages: Math.max(1, Math.ceil(situationTotal / perPageSituation)),
   });
 });
 

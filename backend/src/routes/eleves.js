@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../config/db');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { genererMatricule, logActivite, envoyerCorbeille, getParam, getEcole, nomCompletConditions } = require('../utils/helpers');
 const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
 
@@ -8,7 +8,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 // GET /api/eleves?classe_id=&q=&statut=&annee=&page=&limit=  (annee: consulter une annee archivee)
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('eleves'), async (req, res) => {
   const { classe_id, q, statut = 'actif', redoublant, annee } = req.query;
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -68,14 +68,15 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/eleves/search?q=  (recherche instantanee - remplace api/search_eleve.php)
-router.get('/search', async (req, res) => {
+// Accessible aux caissiers (Caisse rapide) sans exiger la permission 'eleves' a part entiere.
+router.get('/search', requireAnyPermission('paiements', 'eleves'), async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
   const { sql: nomSql, count: nomCount } = nomCompletConditions('e');
   const [rows] = await db.query(
     `SELECT e.id, e.nom, e.postnom, e.prenom, e.matricule, e.genre, c.nom as classe,
             e.frais_scolarite_total,
-            COALESCE((SELECT SUM(p.montant) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      WHERE e.statut='actif' AND (e.nom LIKE ? OR e.postnom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR ${nomSql})
      ORDER BY e.nom ASC, e.prenom ASC LIMIT 10`,
@@ -89,7 +90,7 @@ router.get('/search', async (req, res) => {
 });
 
 // GET /api/eleves/by-classe/:classeId (remplace api/eleves_classe.php)
-router.get('/by-classe/:classeId', async (req, res) => {
+router.get('/by-classe/:classeId', requireAnyPermission('classes', 'eleves'), async (req, res) => {
   const { classeId } = req.params;
   const payerName = (process.env.DB_CLIENT || '').toLowerCase() === 'sqlite'
     ? "COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')"
@@ -103,7 +104,7 @@ router.get('/by-classe/:classeId', async (req, res) => {
 
   const [rows] = await db.query(
     `SELECT e.id, e.nom, e.postnom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total, e.redoublant,
-            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
+            COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as dernier_paiement_date,
             (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
      FROM eleves e WHERE e.classe_id=? AND e.statut='actif' ORDER BY e.nom ASC, e.prenom ASC`,
@@ -118,7 +119,7 @@ router.get('/by-classe/:classeId', async (req, res) => {
 });
 
 // GET /api/eleves/export.xlsx
-router.get('/export.xlsx', async (req, res) => {
+router.get('/export.xlsx', requirePermission('eleves'), async (req, res) => {
   try {
     const { classe_id, q, statut = 'actif', redoublant, devise: deviseQ } = req.query;
     const where = ['e.statut != "transfere"'];
@@ -136,7 +137,7 @@ router.get('/export.xlsx', async (req, res) => {
     const [rows] = await db.query(
       `SELECT e.matricule, e.prenom, e.postnom, e.nom, e.genre, e.date_naissance, c.nom as classe, e.statut, e.redoublant,
               e.nom_parent, e.telephone_parent, e.frais_scolarite_total,
-              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
+              COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
               e.date_inscription, e.annee_scolaire
        FROM eleves e JOIN classes c ON c.id=e.classe_id
        ${whereStr} ORDER BY e.nom ASC`,
@@ -189,7 +190,7 @@ router.get('/export.xlsx', async (req, res) => {
 });
 
 // GET /api/eleves/:id (fiche detaillee + paiements + calculs) - ?annee=X pour consulter une annee passee
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('eleves'), async (req, res) => {
   const { id } = req.params;
   const { annee } = req.query;
   const [[eleve]] = await db.query(
@@ -247,7 +248,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET /api/eleves/:id/caisse-info (donnees necessaires a la page caisse rapide)
-router.get('/:id/caisse-info', async (req, res) => {
+router.get('/:id/caisse-info', requireAnyPermission('paiements', 'eleves'), async (req, res) => {
   const { id } = req.params;
   const [[eleve]] = await db.query(
     `SELECT e.*, c.nom as classe_nom, c.frais_scolarite, c.frais_inscription,

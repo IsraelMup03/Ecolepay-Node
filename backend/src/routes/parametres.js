@@ -19,15 +19,21 @@ router.use(requireAuth);
 const LOGO_DIR = path.join(__dirname, '../../uploads/logos');
 fs.mkdirSync(LOGO_DIR, { recursive: true });
 
+// Allowlist stricte (pas de SVG : risque XSS via <script> embarque) et extension
+// deduite du mimetype detecte par multer, jamais du nom de fichier fourni par le
+// client (qui pourrait sinon deguiser un .php en image pour un serveur Apache/XAMPP
+// colocalise sur le meme dossier htdocs).
+const MIME_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, LOGO_DIR),
-    filename: (req, file, cb) => cb(null, `logo_${Date.now()}${path.extname(file.originalname)}`),
+    filename: (req, file, cb) => cb(null, `logo_${Date.now()}${MIME_EXT[file.mimetype] || ''}`),
   }),
   limits: { fileSize: 3 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/^image\//.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Seules les images sont acceptees.'));
+    if (MIME_EXT[file.mimetype]) cb(null, true);
+    else cb(new Error('Seules les images PNG, JPEG, GIF ou WEBP sont acceptees.'));
   },
 });
 
@@ -70,7 +76,12 @@ router.put('/systeme', requirePermission('parametres'), async (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/parametres/reinitialiser  (danger zone : supprime eleves/classes/paiements)
+// POST /api/parametres/reinitialiser  (danger zone : remet le logiciel a l'etat d'un
+// tout premier lancement, avant toute configuration. Tout est supprime : eleves, classes,
+// paiements, remboursements, depenses, historique, corbeille, journal d'activite, et tous
+// les comptes utilisateurs SAUF celui qui declenche la reinitialisation (sinon plus personne
+// ne pourrait se reconnecter). Le profil de l'ecole (nom/logo/adresse/devise/taux) et les
+// parametres systeme sont aussi remis a leurs valeurs par defaut.
 router.post('/reinitialiser', requireAdmin, async (req, res) => {
   const { confirmation } = req.body;
   if (confirmation !== 'CONFIRMER') {
@@ -78,16 +89,57 @@ router.post('/reinitialiser', requireAdmin, async (req, res) => {
   }
   const conn = await db.getConnection();
   try {
+    // Annee scolaire "fraiche" calculee a partir de la date reelle du jour (pas une valeur
+    // figee) : un logiciel remis a neuf doit demarrer sur l'annee scolaire en cours reelle.
+    const now = new Date();
+    const debutAnnee = (now.getMonth() + 1) >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+    const anneeFraiche = `${debutAnnee}-${debutAnnee + 1}`;
+
+    const [[ecoleRow]] = await conn.query('SELECT id, logo FROM ecole LIMIT 1');
+
     await conn.beginTransaction();
     await conn.query('DELETE FROM remboursements');
     await conn.query('DELETE FROM paiements');
     await conn.query('DELETE FROM archives_annuelles');
+    await conn.query('DELETE FROM depenses');
+    await conn.query('DELETE FROM corbeille');
+    await conn.query('DELETE FROM logs_activite');
     await conn.query('DELETE FROM eleves');
     await conn.query('DELETE FROM classes');
-    await conn.query('DELETE FROM corbeille');
+    await conn.query('DELETE FROM utilisateurs WHERE id != ?', [req.user.id]);
+
+    if (ecoleRow) {
+      await conn.query(
+        `UPDATE ecole SET nom='', adresse=NULL, telephone=NULL, email=NULL, devise='USD', devise_locale='CDF',
+                logo=NULL, slogan=NULL, annee_scolaire=?, sceau=NULL WHERE id=?`,
+        [anneeFraiche, ecoleRow.id]
+      );
+    }
+    const parametresDefaut = {
+      annee_scolaire_courante: anneeFraiche,
+      mois_debut_annee: '9',
+      promotion_automatique: '1',
+      delai_corbeille: '30',
+      format_matricule: 'EP-{ANNEE}-{NUM}',
+      compteur_matricule: '1',
+      taux_usd_cdf: '2800',
+      rappel_paiement: '1',
+    };
+    for (const [cle, valeur] of Object.entries(parametresDefaut)) {
+      await conn.query('UPDATE parametres SET valeur=? WHERE cle=?', [valeur, cle]);
+    }
+
     await conn.commit();
-    await logActivite(req.user.id, 'Application reinitialisee', 'Suppression definitive: eleves, classes, paiements', req.ip);
-    res.json({ success: true });
+
+    // Supprime le fichier logo uploade (le champ en base vient d'etre vide) : sinon le
+    // fichier reste orphelin sur le disque indefiniment.
+    if (ecoleRow?.logo) {
+      const logoPath = path.join(LOGO_DIR, ecoleRow.logo);
+      fs.unlink(logoPath, () => {});
+    }
+
+    await logActivite(req.user.id, 'Application reinitialisee', 'Remise a neuf complete : donnees, comptes, profil ecole et parametres', req.ip);
+    res.json({ success: true, anneeFraiche });
   } catch (e) {
     await conn.rollback();
     res.status(500).json({ error: e.message });

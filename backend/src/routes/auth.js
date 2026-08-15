@@ -1,14 +1,27 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const db = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
 const { logActivite, getEcole } = require('../utils/helpers');
 
 const router = express.Router();
 
+// Freine le bruteforce/credential-stuffing sur la connexion : 15 tentatives / 15 min
+// par IP, comptees uniquement sur les echecs (une connexion reussie ne consomme pas
+// le quota d'un utilisateur legitime qui retente apres une faute de frappe).
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Trop de tentatives de connexion. Reessayez dans quelques minutes.' },
+});
+
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Veuillez remplir tous les champs.' });
