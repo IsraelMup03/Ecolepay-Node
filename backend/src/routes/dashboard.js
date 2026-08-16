@@ -28,8 +28,16 @@ router.get('/', async (req, res) => {
     const [[{ totalAnnee }]] = await db.query(
       "SELECT COALESCE(SUM(montant_usd),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
     );
+    // Le taux de recouvrement compare ce qui a ete paye de scolarite a ce qui est attendu
+    // de scolarite (totalAttendu, base sur frais_scolarite_total) : melanger les frais
+    // d'inscription/divers dans le numerateur gonflait artificiellement ce taux a chaque
+    // paiement d'un autre motif. totalAnnee (tous types confondus) reste utilise tel quel
+    // pour "Total encaisse" et "Solde net", qui doivent eux inclure toutes les recettes.
+    const [[{ totalAnneeScolarite }]] = await db.query(
+      "SELECT COALESCE(SUM(montant_usd),0) as totalAnneeScolarite FROM paiements WHERE annee_scolaire=? AND statut='valide' AND type_paiement='scolarite'", [annee]
+    );
     const [[{ totalAttendu }]] = await db.query('SELECT COALESCE(SUM(frais_scolarite_total),0) as totalAttendu FROM archives_annuelles WHERE annee_scolaire=?', [annee]);
-    const taux = totalAttendu > 0 ? Math.round((totalAnnee / totalAttendu) * 1000) / 10 : 0;
+    const taux = totalAttendu > 0 ? Math.round((totalAnneeScolarite / totalAttendu) * 1000) / 10 : 0;
     const [[{ elevesSoldes }]] = await db.query(
       "SELECT COUNT(*) as elevesSoldes FROM archives_annuelles WHERE annee_scolaire=? AND statut_paiement='solde'", [annee]
     );
@@ -94,7 +102,14 @@ router.get('/', async (req, res) => {
   const [[{ totalAttendu }]] = await db.query(
     "SELECT COALESCE(SUM(frais_scolarite_total),0) as totalAttendu FROM eleves WHERE statut='actif' AND annee_scolaire=?", [annee]
   );
-  const taux = totalAttendu > 0 ? Math.round((totalAnnee / totalAttendu) * 1000) / 10 : 0;
+  // Voir commentaire equivalent dans la branche historique ci-dessus : le taux de
+  // recouvrement doit comparer scolarite payee a scolarite attendue, pas "tout paye" a
+  // "scolarite attendue" (totalAnnee, utilise pour Total encaisse/Solde net, reste tous
+  // types confondus intentionnellement).
+  const [[{ totalAnneeScolarite }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd),0) as totalAnneeScolarite FROM paiements WHERE annee_scolaire=? AND statut='valide' AND type_paiement='scolarite'", [annee]
+  );
+  const taux = totalAttendu > 0 ? Math.round((totalAnneeScolarite / totalAttendu) * 1000) / 10 : 0;
 
   const [[{ elevesSoldes }]] = await db.query(
     `SELECT COUNT(*) as elevesSoldes FROM eleves e WHERE e.statut='actif' AND e.annee_scolaire=?
