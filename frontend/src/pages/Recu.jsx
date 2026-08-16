@@ -10,60 +10,15 @@ export default function Recu() {
   const [data, setData] = useState(null);
   const { format } = useDevise();
 
-  const [localIp, setLocalIp] = useState(null);
-
   useEffect(() => {
     const isNew = searchParams.get('new') !== null;
     client.get(`/paiements/${id}/recu`, { params: isNew ? { new: 1 } : {} }).then((res) => setData(res.data));
     // eslint-disable-next-line
   }, [id]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const host = window.location.hostname;
-    if (!['localhost', '127.0.0.1', '0.0.0.0'].includes(host)) {
-      return;
-    }
-
-    async function resolveLocalIp() {
-      if (!window.RTCPeerConnection) {
-        return;
-      }
-      const ips = new Set();
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-      pc.createDataChannel('');
-      pc.onicecandidate = (event) => {
-        if (!event.candidate) {
-          pc.close();
-          const found = Array.from(ips).find((ip) => !ip.startsWith('127.') && !ip.startsWith('169.254.'));
-          if (found) setLocalIp(found);
-          return;
-        }
-        const candidates = event.candidate.candidate.match(/(?:[0-9]{1,3}\.){3}[0-9]{1,3}/g);
-        if (candidates) candidates.forEach((ip) => ips.add(ip));
-      };
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-      } catch (err) {
-        pc.close();
-      }
-    }
-    resolveLocalIp();
-  }, []);
-
   if (!data) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement du reçu...</p></div>;
 
   const { paiement: p, resteApres, pctPaye, ecole } = data;
-  const receiptPath = `/recu/verify/${p.reference}`;
-  const portPart = typeof window !== 'undefined' && window.location.port ? `:${window.location.port}` : '';
-  const receiptUrl = typeof window !== 'undefined' ? (() => {
-    if (localIp) {
-      return `${window.location.protocol}//${localIp}${portPart}${receiptPath}`;
-    }
-    return `${window.location.origin}${receiptPath}`;
-  })() : receiptPath;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(receiptUrl)}`;
 
   return (
     <div className="receipt-page">
@@ -90,10 +45,6 @@ export default function Recu() {
               <div className="receipt-meta-row-item"><strong>Référence :</strong> {p.reference}</div>
               <div className="receipt-meta-row-item"><strong>Date :</strong> {new Date(p.date_paiement).toLocaleString('fr-FR')}</div>
               <div className="receipt-meta-row-item"><strong>Statut :</strong> {p.statut}</div>
-            </div>
-            <div className="receipt-qr-block">
-              <img className="receipt-qr" src={qrUrl} alt="QR code de vérification" />
-              <div className="receipt-qr-label">Scanner pour vérifier</div>
             </div>
           </div>
 
