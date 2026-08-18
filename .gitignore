@@ -23,3 +23,7 @@ logs/
 # Fichiers système invisibles (Mac et Windows)
 .DS_Store
 Thumbs.db
+
+# Copie de sauvegarde auto-generee par le serveur (voir backend/src/server.js) : n'a rien
+# a faire dans le depot, chaque installation/poste a la sienne
+COPIE DE SECURITE*.sqlite

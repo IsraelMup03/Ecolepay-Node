@@ -126,6 +126,30 @@ function adressesReseauLocal() {
   return adresses;
 }
 
+// Copie de sauvegarde de la base de donnees, bien visible a la racine du dossier, que
+// l'ecole est invitee a glisser regulierement vers son cloud (Google Drive, OneDrive...)
+// pour ne jamais perdre ses donnees si cet ordinateur tombe en panne. "VACUUM INTO" (et
+// non une simple copie de fichier) garantit un instantane coherent meme si une ecriture
+// est en cours au moment de la sauvegarde. Ecrite d'abord sous un nom temporaire puis
+// renommee (operation atomique) pour ne jamais laisser une sauvegarde a moitie ecrite si
+// le logiciel est ferme pile pendant la sauvegarde. Seulement en installation "prete a
+// l'emploi" (SERVE_FRONTEND) : inutile de polluer ce dossier de developpement.
+const NOM_SAUVEGARDE = 'COPIE DE SECURITE (a mettre sur le Cloud).sqlite';
+async function sauvegarderBaseDeDonnees() {
+  if (!SERVE_FRONTEND) return;
+  const cheminFinal = path.join(__dirname, '../..', NOM_SAUVEGARDE);
+  const cheminTemp = `${cheminFinal}.tmp`;
+  try {
+    if (fs.existsSync(cheminTemp)) fs.unlinkSync(cheminTemp);
+    const db = require('./config/db');
+    await db.query('VACUUM INTO ?', [cheminTemp]);
+    fs.renameSync(cheminTemp, cheminFinal);
+    console.log(`Copie de sauvegarde mise a jour : ${cheminFinal}`);
+  } catch (e) {
+    console.error('Echec de la sauvegarde automatique de la base de donnees:', e.message);
+  }
+}
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   const adresses = adressesReseauLocal();
@@ -140,4 +164,9 @@ app.listen(PORT, () => {
     console.log(' (Aucune adresse reseau local detectee - acces uniquement depuis cet ordinateur.)');
   }
   console.log('========================================');
+
+  if (SERVE_FRONTEND) {
+    sauvegarderBaseDeDonnees();
+    setInterval(sauvegarderBaseDeDonnees, 2 * 60 * 60 * 1000); // toutes les 2 heures
+  }
 });

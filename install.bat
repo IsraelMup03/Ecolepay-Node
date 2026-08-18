@@ -34,7 +34,14 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
-echo [1/4] Installation des dependances du serveur...
+if not exist "frontend\dist\index.html" (
+    echo [ERREUR] L'interface pre-construite est introuvable ^(frontend\dist^).
+    echo Ce dossier semble incomplet - repreparez-le avec preparer-nouveau-client.bat.
+    pause
+    exit /b 1
+)
+
+echo [1/2] Installation des dependances du serveur...
 pushd backend
 call npm install --no-fund --no-audit
 if %errorLevel% neq 0 (
@@ -46,29 +53,7 @@ if %errorLevel% neq 0 (
 popd
 
 echo.
-echo [2/4] Installation des dependances de l'interface...
-pushd frontend
-call npm install --no-fund --no-audit
-if %errorLevel% neq 0 (
-    popd
-    echo [ERREUR] L'installation des dependances de l'interface a echoue.
-    pause
-    exit /b 1
-)
-
-echo.
-echo [3/4] Construction de l'interface...
-call npm run build
-if %errorLevel% neq 0 (
-    popd
-    echo [ERREUR] La construction de l'interface a echoue.
-    pause
-    exit /b 1
-)
-popd
-
-echo.
-echo [4/4] Configuration ^(cle de securite, base de donnees, raccourci de lancement^)...
+echo [2/2] Configuration ^(cle de securite, base de donnees, raccourci de lancement^)...
 if not exist "backend\database" mkdir "backend\database"
 if not exist "backend\uploads" mkdir "backend\uploads"
 if not exist "backend\database\ecolepay.sqlite" (
