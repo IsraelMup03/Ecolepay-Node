@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
 const STATUT_BADGE = { actif: 'badge-success', suspendu: 'badge-danger', diplome: 'badge-info', transfere: 'badge-default' };
 const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplômé', transfere: 'Transféré' };
@@ -14,14 +15,26 @@ export default function EleveDetail() {
   const navigate = useNavigate();
   const { viewingAnnee } = useAnnee();
   const { format } = useDevise();
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentForm, setPaymentForm] = useState(PAIEMENT_FORM_INIT);
+  const [paymentSectionId, setPaymentSectionId] = useState('');
   const [paymentError, setPaymentError] = useState('');
   const [paymentSuccess, setPaymentSuccess] = useState(null);
   const [paying, setPaying] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferForm, setTransferForm] = useState({ classe_id: '', section_id: '' });
+  const [transferSections, setTransferSections] = useState([]);
+  const [transferError, setTransferError] = useState('');
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [showRemiseModal, setShowRemiseModal] = useState(false);
+  const [remiseForm, setRemiseForm] = useState('');
+  const [remiseError, setRemiseError] = useState('');
+  const [remiseSaving, setRemiseSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -30,17 +43,27 @@ export default function EleveDetail() {
     setLoading(false);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id, viewingAnnee]);
+  useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
+  useEffect(() => {
+    if (!transferForm.classe_id) { setTransferSections([]); return; }
+    client.get(`/classes/${transferForm.classe_id}/sections`).then((r) => setTransferSections(r.data));
+  }, [transferForm.classe_id]);
 
   function openPaymentModal() {
     setPaymentForm(PAIEMENT_FORM_INIT);
+    setPaymentSectionId('');
     setPaymentError('');
     setPaymentSuccess(null);
     setShowPaymentModal(true);
   }
 
+  const besoinSection = !!(data?.sectionsDisponibles?.length
+    && (paymentForm.type_paiement === 'scolarite' || paymentForm.type_paiement === 'inscription'));
+
   async function submitPayment(ev) {
     ev.preventDefault();
     setPaymentError('');
+    if (besoinSection && !paymentSectionId) { setPaymentError('Veuillez préciser la section de cet élève.'); return; }
     setPaying(true);
     try {
       const res = await client.post('/paiements', {
@@ -49,6 +72,7 @@ export default function EleveDetail() {
         devise: paymentForm.devise,
         type_paiement: paymentForm.type_paiement,
         mode_paiement: paymentForm.mode_paiement,
+        section_id: paymentSectionId || undefined,
         periode: paymentForm.periode,
         description: paymentForm.description,
       });
@@ -72,6 +96,54 @@ export default function EleveDetail() {
       load();
     } catch (err) {
       setMsg(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
+  function openTransfer() {
+    setTransferForm({ classe_id: '', section_id: '' });
+    setTransferSections([]);
+    setTransferError('');
+    setShowTransferModal(true);
+  }
+
+  async function submitTransfer(ev) {
+    ev.preventDefault();
+    setTransferError('');
+    setTransferSaving(true);
+    try {
+      await client.post(`/eleves/${id}/transferer`, {
+        classe_id: transferForm.classe_id,
+        section_id: transferForm.section_id || null,
+      });
+      setShowTransferModal(false);
+      setMsg('Élève transféré avec succès.');
+      load();
+    } catch (err) {
+      setTransferError(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setTransferSaving(false);
+    }
+  }
+
+  function openRemise() {
+    setRemiseForm(String(data.eleve.remise_pourcentage || 0));
+    setRemiseError('');
+    setShowRemiseModal(true);
+  }
+
+  async function submitRemise(ev) {
+    ev.preventDefault();
+    setRemiseError('');
+    setRemiseSaving(true);
+    try {
+      await client.put(`/eleves/${id}/remise`, { remise_pourcentage: parseFloat(remiseForm) });
+      setShowRemiseModal(false);
+      setMsg('Remise mise à jour.');
+      load();
+    } catch (err) {
+      setRemiseError(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setRemiseSaving(false);
     }
   }
 
@@ -121,7 +193,7 @@ export default function EleveDetail() {
               <div className={eleve.genre === 'F' ? 'genre-f' : 'genre-m'} style={{ width: 48, height: 48, fontSize: 16 }}>{eleve.genre}</div>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 700 }}>{eleve.prenom} {eleve.postnom ? `${eleve.postnom} ` : ''}{eleve.nom}</div>
-                <div className="text-muted">{eleve.matricule} · {eleve.classe_nom}</div>
+                <div className="text-muted">{eleve.matricule} · {eleve.classe_nom}{eleve.section_nom ? ` ${eleve.section_nom}` : ''}</div>
               </div>
             </div>
             <table>
@@ -137,6 +209,10 @@ export default function EleveDetail() {
                 <tr><td className="text-muted">Email</td><td>{eleve.email_parent || '—'}</td></tr>
                 <tr><td className="text-muted">Date d'inscription</td><td>{eleve.date_inscription || '—'}</td></tr>
                 <tr><td className="text-muted">Année scolaire</td><td>{eleve.annee_scolaire || '—'}</td></tr>
+                <tr><td className="text-muted">Remise sur la scolarité</td><td>
+                  {eleve.remise_pourcentage > 0 ? <span className="badge badge-info">{eleve.remise_pourcentage}%</span> : <span className="text-muted">Aucune</span>}
+                  {!viewingAnnee && <button className="btn btn-link btn-sm" style={{ marginLeft: 8 }} onClick={openRemise}>Modifier</button>}
+                </td></tr>
               </tbody>
             </table>
 
@@ -144,6 +220,7 @@ export default function EleveDetail() {
               <div className="flex gap-8" style={{ marginTop: 18, flexWrap: 'wrap' }}>
                 <button className="btn btn-outline" onClick={openPaymentModal}><i className="ph ph-money"></i> Enregistrer un paiement</button>
                 {eleve.classe_inf_nom && eleve.statut === 'actif' && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
+                {eleve.statut === 'actif' && user?.role === 'admin' && <button className="btn btn-outline" onClick={openTransfer}><i className="ph ph-arrows-left-right"></i> Transférer</button>}
                 {(eleve.statut === 'actif' || eleve.statut === 'suspendu') && (
                   <button className="btn btn-outline" onClick={toggleStatut}>
                     <i className={eleve.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {eleve.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
@@ -160,10 +237,26 @@ export default function EleveDetail() {
           <div className="card-body">
             <div className="mb-16">
               <div className="flex-between mb-12"><span>Scolarité</span><span><strong>{format(totaux.totalPayeScolarite)}</strong> / {format(eleve.frais_scolarite_total)}</span></div>
-              <div className="progress-bar-wrap">
-                <div className={`progress-bar-fill ${totaux.pctScolarite >= 100 ? 'green' : totaux.pctScolarite >= 50 ? 'orange' : 'red'}`} style={{ width: `${totaux.pctScolarite}%` }} />
-              </div>
-              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{totaux.pctScolarite}% payé · Reste {format(totaux.resteScolarite)}</div>
+              {data.tranches && data.tranches.length > 0 ? (
+                <div>
+                  {data.tranches.map((t) => (
+                    <div key={t.numero} className="tranche-row">
+                      <div className="tranche-label"><span>Tranche {t.numero}</span><span>{format(t.paye)} / {format(t.montant)}</span></div>
+                      <div className="progress-bar-wrap sm">
+                        <div className={`progress-bar-fill ${t.pct >= 100 ? 'green' : t.pct >= 50 ? 'orange' : 'red'}`} style={{ width: `${t.pct}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                  <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>{totaux.pctScolarite}% payé au total · Reste {format(totaux.resteScolarite)}</div>
+                </div>
+              ) : (
+                <>
+                  <div className="progress-bar-wrap">
+                    <div className={`progress-bar-fill ${totaux.pctScolarite >= 100 ? 'green' : totaux.pctScolarite >= 50 ? 'orange' : 'red'}`} style={{ width: `${totaux.pctScolarite}%` }} />
+                  </div>
+                  <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{totaux.pctScolarite}% payé · Reste {format(totaux.resteScolarite)}</div>
+                </>
+              )}
             </div>
             <div className="stat-grid" style={{ gridTemplateColumns: totaux.totalSurplusNonRendu > 0 ? '1fr 1fr 1fr' : '1fr 1fr' }}>
               <div className="stat-card">
@@ -268,6 +361,16 @@ export default function EleveDetail() {
                     </select>
                   </div>
                 </div>
+                {besoinSection && (
+                  <div className="form-group">
+                    <label>Section de l'élève *</label>
+                    <select value={paymentSectionId} onChange={(e) => setPaymentSectionId(e.target.value)} required>
+                      <option value="">Sélectionner...</option>
+                      {data.sectionsDisponibles.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                    </select>
+                    <small className="text-muted">Premier paiement de l'année pour cet élève : sa section reste ensuite celle-ci.</small>
+                  </div>
+                )}
                 <div className="form-grid form-grid-2">
                   <div className="form-group">
                     <label>Montant</label>
@@ -292,10 +395,69 @@ export default function EleveDetail() {
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowPaymentModal(false)}>Fermer</button>
-                <button type="submit" className="btn btn-accent" disabled={paying}>{paying ? 'Enregistrement...' : <><i className="ph ph-check-circle"></i> Valider le paiement</>}</button>
+                <button type="submit" className="btn btn-accent" disabled={paying || (besoinSection && !paymentSectionId)}>{paying ? 'Enregistrement...' : <><i className="ph ph-check-circle"></i> Valider le paiement</>}</button>
               </div>
             </form>
           </div>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${showTransferModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowTransferModal(false)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-arrows-left-right"></i><h3>Transférer {eleve.prenom} {eleve.nom}</h3>
+            <button className="modal-close" onClick={() => setShowTransferModal(false)}><i className="ph ph-x"></i></button>
+          </div>
+          <form onSubmit={submitTransfer}>
+            <div className="modal-body">
+              {transferError && <div className="alert alert-danger">{transferError}</div>}
+              <p className="text-muted">Classe actuelle : <strong>{eleve.classe_nom}{eleve.section_nom ? ` ${eleve.section_nom}` : ''}</strong></p>
+              <div className="form-group">
+                <label>Nouvelle classe *</label>
+                <select value={transferForm.classe_id} onChange={(e) => setTransferForm({ classe_id: e.target.value, section_id: '' })} required>
+                  <option value="">Sélectionner...</option>
+                  {classes.filter((c) => c.id !== eleve.classe_id).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                </select>
+              </div>
+              {transferSections.length > 0 && (
+                <div className="form-group">
+                  <label>Section</label>
+                  <select value={transferForm.section_id} onChange={(e) => setTransferForm({ ...transferForm, section_id: e.target.value })}>
+                    <option value="">Non assignée pour l'instant</option>
+                    {transferSections.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </select>
+                </div>
+              )}
+              <p className="text-muted">Les frais de scolarité et d'inscription de l'élève seront mis à jour selon ceux de la nouvelle classe.</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowTransferModal(false)}>Annuler</button>
+              <button type="submit" className="btn btn-accent" disabled={transferSaving}>{transferSaving ? 'Transfert...' : 'Transférer'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${showRemiseModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowRemiseModal(false)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-percent"></i><h3>Remise — {eleve.prenom} {eleve.nom}</h3>
+            <button className="modal-close" onClick={() => setShowRemiseModal(false)}><i className="ph ph-x"></i></button>
+          </div>
+          <form onSubmit={submitRemise}>
+            <div className="modal-body">
+              {remiseError && <div className="alert alert-danger">{remiseError}</div>}
+              <div className="form-group">
+                <label>Pourcentage de remise sur la scolarité</label>
+                <input type="number" min="0" max="100" step="0.5" value={remiseForm} onChange={(e) => setRemiseForm(e.target.value)} required />
+                <small className="text-muted">S'applique uniquement à la scolarité (ex: réduction familiale), jamais aux frais d'inscription. Le montant dû est recalculé immédiatement.</small>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowRemiseModal(false)}>Annuler</button>
+              <button type="submit" className="btn btn-accent" disabled={remiseSaving}>{remiseSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

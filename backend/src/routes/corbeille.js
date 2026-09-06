@@ -63,6 +63,16 @@ router.post('/:id/restaurer', async (req, res) => {
     return res.json({ success: true, message: 'Dépense restaurée.' });
   }
 
+  if (item.table_source === 'recettes_diverses') {
+    // Meme mecanique que "depenses" ci-dessus (vrai DELETE, reinsertion depuis le snapshot).
+    const cols = Object.keys(data);
+    const placeholders = cols.map(() => '?').join(',');
+    await db.query(`INSERT INTO recettes_diverses (${cols.join(',')}) VALUES (${placeholders})`, Object.values(data));
+    await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);
+    await logActivite(req.user.id, 'Recette diverse restauree', `Corbeille ID:${id}`, req.ip);
+    return res.json({ success: true, message: 'Recette restaurée.' });
+  }
+
   res.status(400).json({ error: 'Type de donnees inconnu.' });
 });
 

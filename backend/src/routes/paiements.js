@@ -65,8 +65,10 @@ router.get('/', async (req, res) => {
   const [[{ total }]] = await db.query(
     `SELECT COUNT(*) as total FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
   );
+  // montant_usd + montant_surplus : ce total (affiche en haut de la liste filtree) doit
+  // refleter l'argent reellement recu, comme "Total encaisse" sur le tableau de bord.
   const [[{ somme }]] = await db.query(
-    `SELECT COALESCE(SUM(p.montant_usd),0) as somme FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
+    `SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as somme FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
   );
   const [rows] = await db.query(
     `SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
@@ -175,9 +177,10 @@ router.get('/:id/recu', async (req, res) => {
   const [[p]] = await db.query(
     `SELECT p.*, e.nom as e_nom, e.prenom as e_prenom, e.matricule, e.genre,
             e.nom_parent, e.telephone_parent, e.annee_scolaire as e_annee, e.frais_scolarite_total,
-            c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
+            c.nom as classe, s.nom as section, u.prenom as cpt_prenom, u.nom as cpt_nom,
             COALESCE((SELECT SUM(p2.montant_usd) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.type_paiement=p.type_paiement),0) as total_type_paye_usd
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
+     LEFT JOIN sections s ON s.id=e.section_id
      LEFT JOIN utilisateurs u ON u.id=p.comptable_id
      WHERE p.id=?`,
     [id]
@@ -198,21 +201,45 @@ router.get('/:id/recu', async (req, res) => {
 // (route de vérification déjà définie en début de fichier)
 
 // POST /api/paiements  (enregistrement d'un paiement - equivalent caisse.php)
+// { ..., section_id? } : requis si l'eleve est dans une classe a sections et n'en a pas
+// encore (voir plus bas), uniquement pour les paiements scolarite/inscription.
 router.post('/', requirePermission('paiements'), async (req, res) => {
-  try {
-    const { eleve_id, montant, devise, type_paiement = 'scolarite', mode_paiement = 'especes', periode, description } = req.body;
+  const { eleve_id, montant, devise, type_paiement = 'scolarite', mode_paiement = 'especes', periode, description, section_id } = req.body;
 
-    const eleveId = parseInt(eleve_id, 10);
-    let montantSaisi = parseFloat(montant);
-    if (!eleveId || !(montantSaisi > 0)) {
-      return res.status(400).json({ error: 'Veuillez saisir un montant valide.' });
-    }
+  const eleveId = parseInt(eleve_id, 10);
+  let montantSaisi = parseFloat(montant);
+  if (!eleveId || !(montantSaisi > 0)) {
+    return res.status(400).json({ error: 'Veuillez saisir un montant valide.' });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
 
     const ecole = await getEcole();
     const devPrincipale = ecole?.devise || 'USD';
     const deviseSaisie = devise || devPrincipale;
     const taux = parseFloat(await getParam('taux_usd_cdf', '2800'));
     const annee = await getParam('annee_scolaire_courante');
+
+    const [[eleveClasse]] = await conn.query('SELECT classe_id, section_id FROM eleves WHERE id=?', [eleveId]);
+    if (!eleveClasse) { await conn.rollback(); return res.status(400).json({ error: 'Eleve introuvable.' }); }
+
+    // Une classe a sections (ex: "1ere Secondaire A/B/C") : le premier paiement scolarite
+    // ou inscription de l'annee doit preciser la section, qui reste ensuite celle de
+    // l'eleve pour le reste de l'annee. Les autres motifs (cantine, transport...) ne
+    // forcent pas ce choix -- seuls ces deux motifs definissent vraiment l'inscription.
+    if (!eleveClasse.section_id && (type_paiement === 'scolarite' || type_paiement === 'inscription')) {
+      const [sectionsDisponibles] = await conn.query('SELECT id, nom FROM sections WHERE classe_id=? ORDER BY ordre ASC, nom ASC', [eleveClasse.classe_id]);
+      if (sectionsDisponibles.length > 0) {
+        const sectionIdFournie = section_id ? sectionsDisponibles.find((s) => String(s.id) === String(section_id)) : null;
+        if (!sectionIdFournie) {
+          await conn.rollback();
+          return res.status(400).json({ error: 'Veuillez preciser la section de cet eleve.', sectionsDisponibles });
+        }
+        await conn.query('UPDATE eleves SET section_id=? WHERE id=?', [sectionIdFournie.id, eleveId]);
+      }
+    }
 
     let montantUSD, montantCDF;
     if (deviseSaisie === 'CDF') {
@@ -231,15 +258,15 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
     let surplus = 0;
     let surplusUSD = 0;
     if (type_paiement === 'scolarite') {
-      const [[eleve]] = await db.query('SELECT frais_scolarite_total, annee_scolaire FROM eleves WHERE id=?', [eleveId]);
-      if (!eleve) return res.status(400).json({ error: 'Eleve introuvable.' });
-      const [[{ dejaPaye }]] = await db.query(
+      const [[eleve]] = await conn.query('SELECT frais_scolarite_total, annee_scolaire FROM eleves WHERE id=?', [eleveId]);
+      const [[{ dejaPaye }]] = await conn.query(
         `SELECT COALESCE(SUM(montant_usd),0) as dejaPaye FROM paiements
          WHERE eleve_id=? AND statut='valide' AND type_paiement='scolarite' AND annee_scolaire=?`,
         [eleveId, eleve.annee_scolaire]
       );
       const resteScolarite = Math.max(0, parseFloat(eleve.frais_scolarite_total) - parseFloat(dejaPaye));
       if (resteScolarite <= 0) {
+        await conn.rollback();
         return res.status(400).json({ error: 'La scolarité de cet élève est déjà entièrement payée.' });
       }
       if (montantUSD > resteScolarite + 0.009) {
@@ -252,12 +279,14 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
     }
 
     const reference = genererReferencePaiement();
-    const [result] = await db.query(
+    const [result] = await conn.query(
       `INSERT INTO paiements
          (reference, eleve_id, type_paiement, montant, devise, montant_usd, montant_local, taux_change, mode_paiement, periode, description, comptable_id, annee_scolaire, montant_surplus, date_paiement)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
       [reference, eleveId, type_paiement, montantSaisi, deviseSaisie, montantUSD, montantCDF, taux, mode_paiement, periode || null, description || null, req.user.id, annee, surplusUSD]
     );
+
+    await conn.commit();
 
     await logActivite(req.user.id, 'Paiement enregistre', `Ref:${reference} Eleve:${eleveId} Montant:${montantSaisi} ${deviseSaisie} = ${montantUSD.toFixed(2)} USD${surplus > 0 ? ` (surplus a rembourser: ${surplus.toFixed(2)} ${deviseSaisie})` : ''}`, req.ip);
 
@@ -266,8 +295,11 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
       ...(surplus > 0 ? { surplus: Math.round(surplus * 100) / 100, surplusDevise: deviseSaisie } : {}),
     });
   } catch (e) {
+    await conn.rollback();
     console.error(e);
     res.status(500).json({ error: 'Erreur lors de l\'enregistrement du paiement.' });
+  } finally {
+    conn.release();
   }
 });
 

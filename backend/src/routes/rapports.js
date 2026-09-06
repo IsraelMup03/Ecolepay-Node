@@ -27,26 +27,30 @@ router.get('/', async (req, res) => {
     const classeJoin = classe_id ? `AND p.eleve_id IN (SELECT eleve_id FROM archives_annuelles WHERE annee_scolaire=? AND classe_id=?)` : '';
     const baseParams = classe_id ? [anneeCible, anneeCible, classe_id] : [anneeCible];
 
+    // montant_usd + montant_surplus partout ici : ces totaux representent l'argent
+    // reellement recu en caisse (surplus compris), pas la seule part appliquee a une dette
+    // de scolarite -- contrairement a parClasse/elevesSoldes plus bas, qui comparent
+    // volontairement au frais_scolarite_total et restent donc non modifies.
     const [[resume]] = await db.query(
-      `SELECT COUNT(*) as nb_paiements, COALESCE(SUM(montant_usd),0) as total_usd
+      `SELECT COUNT(*) as nb_paiements, COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as total_usd
        FROM paiements p WHERE p.statut='valide' AND p.annee_scolaire=? ${classeJoin}`,
       baseParams
     );
     const [mensuel] = await db.query(
       `SELECT DATE_FORMAT(p.date_paiement,'%Y-%m') as mois_key, DATE_FORMAT(p.date_paiement,'%b %Y') as mois_lbl,
-              SUM(p.montant_usd) as total, COUNT(*) as nb
+              SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total, COUNT(*) as nb
        FROM paiements p WHERE p.statut='valide' AND p.annee_scolaire=? ${classeJoin}
        GROUP BY DATE_FORMAT(p.date_paiement,'%Y-%m') ORDER BY mois_key ASC`,
       baseParams
     );
     const [parMode] = await db.query(
-      `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd) as total
+      `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
        FROM paiements p WHERE p.statut='valide' AND p.annee_scolaire=? ${classeJoin}
        GROUP BY p.mode_paiement`,
       baseParams
     );
     const [genreParMois] = await db.query(
-      `SELECT DATE_FORMAT(p.date_paiement,'%b %Y') as mois, e.genre, SUM(p.montant_usd) as total
+      `SELECT DATE_FORMAT(p.date_paiement,'%b %Y') as mois, e.genre, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id
        WHERE p.statut='valide' AND p.annee_scolaire=? ${classeJoin}
        GROUP BY DATE_FORMAT(p.date_paiement,'%Y-%m'), e.genre
@@ -112,9 +116,10 @@ router.get('/', async (req, res) => {
   if (classe_id) { where.push('e.classe_id=?'); params.push(classe_id); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
-  // Resume global de la periode
+  // Resume global de la periode (montant_usd + montant_surplus : argent reellement recu,
+  // voir le meme choix explique dans la branche historique ci-dessus)
   const [[resume]] = await db.query(
-    `SELECT COUNT(p.id) as nb_paiements, COALESCE(SUM(p.montant_usd),0) as total_usd
+    `SELECT COUNT(p.id) as nb_paiements, COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as total_usd
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`,
     params
   );
@@ -122,7 +127,7 @@ router.get('/', async (req, res) => {
   // Evolution mensuelle (courbe)
   const [mensuel] = await db.query(
     `SELECT DATE_FORMAT(p.date_paiement,'%Y-%m') as mois_key, DATE_FORMAT(p.date_paiement,'%b %Y') as mois_lbl,
-            SUM(p.montant_usd) as total, COUNT(*) as nb
+            SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total, COUNT(*) as nb
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}
      GROUP BY DATE_FORMAT(p.date_paiement,'%Y-%m') ORDER BY mois_key ASC`,
     params
@@ -144,7 +149,7 @@ router.get('/', async (req, res) => {
 
   // Repartition par mode de paiement (donut)
   const [parMode] = await db.query(
-    `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd) as total
+    `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}
      GROUP BY p.mode_paiement`,
     params
@@ -152,7 +157,7 @@ router.get('/', async (req, res) => {
 
   // Filles vs garcons par mois (horizontal)
   const [genreParMois] = await db.query(
-    `SELECT DATE_FORMAT(p.date_paiement,'%b %Y') as mois, e.genre, SUM(p.montant_usd) as total
+    `SELECT DATE_FORMAT(p.date_paiement,'%b %Y') as mois, e.genre, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}
      GROUP BY DATE_FORMAT(p.date_paiement,'%Y-%m'), e.genre
      ORDER BY DATE_FORMAT(p.date_paiement,'%Y-%m') ASC`,
@@ -409,7 +414,7 @@ router.get('/download/par-mode.xlsx', async (req, res) => {
     const whereStr = `WHERE ${where.join(' AND ')}`;
 
     const [rows] = await db.query(
-      `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd) as total
+      `SELECT p.mode_paiement, COUNT(*) as nb, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}
        GROUP BY p.mode_paiement`,
       params
@@ -475,8 +480,14 @@ router.get('/download/periode.xlsx', async (req, res) => {
     // reste du logiciel (Dashboard, Rapports) qui raisonnent toujours par annee scolaire.
     const anneeCourante = await getParam('annee_scolaire_courante');
 
+    // p.montant_usd est ici recalcule pour inclure le surplus encore detenu (montant_usd +
+    // montant_surplus, sauf s'il a deja ete rendu) : ce rapport sert a reconcilier la caisse
+    // physique, il doit donc refleter l'argent reellement detenu pour chaque transaction, pas
+    // seulement la part appliquee a une dette de scolarite -- et un surplus deja rendu ne
+    // doit plus y compter. L'alias "montant_usd" est conserve tel quel pour que tout le code
+    // plus bas (totalEncaisse, detail des paiements) en beneficie sans autre changement.
     const [paiements] = await db.query(
-      `SELECT p.reference, p.montant_usd, p.devise, p.mode_paiement, p.type_paiement, p.date_paiement,
+      `SELECT p.reference, (p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as montant_usd, p.devise, p.mode_paiement, p.type_paiement, p.date_paiement,
               e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
        LEFT JOIN utilisateurs u ON u.id=p.comptable_id
@@ -485,28 +496,63 @@ router.get('/download/periode.xlsx', async (req, res) => {
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
     const [parMode] = await db.query(
-      `SELECT mode_paiement, COUNT(*) as nb, SUM(montant_usd) as total FROM paiements
+      `SELECT mode_paiement, COUNT(*) as nb, SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)) as total FROM paiements
        WHERE statut='valide' AND annee_scolaire=? AND date_paiement BETWEEN ? AND ? GROUP BY mode_paiement`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
     const [parMotif] = await db.query(
-      `SELECT type_paiement, COUNT(*) as nb, SUM(montant_usd) as total FROM paiements
+      `SELECT type_paiement, COUNT(*) as nb, SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)) as total FROM paiements
        WHERE statut='valide' AND annee_scolaire=? AND date_paiement BETWEEN ? AND ? GROUP BY type_paiement ORDER BY total DESC`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
     const [parClasse] = await db.query(
-      `SELECT c.nom as classe, COUNT(*) as nb, SUM(p.montant_usd) as total
+      `SELECT c.nom as classe, COUNT(*) as nb, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
        WHERE p.statut='valide' AND p.annee_scolaire=? AND p.date_paiement BETWEEN ? AND ? GROUP BY e.classe_id ORDER BY total DESC`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
 
-    const totalEncaisse = paiements.reduce((s, p) => s + (parseFloat(p.montant_usd) || 0), 0);
+    // Recettes diverses (dons, subventions...) de la periode : ce rapport sert a reconcilier
+    // la caisse physique, un don encaisse en especes y appartient au meme titre qu'un
+    // paiement d'eleve -- sinon la caisse reelle et ce rapport divergeraient. N'ont pas de
+    // classe/motif au sens des paiements (categorie differente) : on les fond dans le total
+    // et la repartition par mode (dimension commune), et on leur donne leur propre feuille
+    // de detail + repartition par categorie, plutot que de les forcer dans parMotif/parClasse.
+    const [recettesDiverses] = await db.query(
+      `SELECT r.reference, r.montant_usd, r.devise, r.mode_paiement, r.categorie, r.provenance, r.description, r.date_recette, u.prenom as cpt_prenom, u.nom as cpt_nom
+       FROM recettes_diverses r LEFT JOIN utilisateurs u ON u.id=r.comptable_id
+       WHERE r.annee_scolaire=? AND r.date_recette BETWEEN ? AND ?
+       ORDER BY r.date_recette ASC`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
+    const [parModeRecettes] = await db.query(
+      `SELECT mode_paiement, COUNT(*) as nb, SUM(montant_usd) as total FROM recettes_diverses
+       WHERE annee_scolaire=? AND date_recette BETWEEN ? AND ? GROUP BY mode_paiement`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
+    const [parCategorieRecettes] = await db.query(
+      `SELECT categorie, COUNT(*) as nb, SUM(montant_usd) as total FROM recettes_diverses
+       WHERE annee_scolaire=? AND date_recette BETWEEN ? AND ? GROUP BY categorie ORDER BY total DESC`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
+    const parModeFusion = new Map();
+    parMode.forEach((m) => parModeFusion.set(m.mode_paiement, { mode_paiement: m.mode_paiement, nb: m.nb, total: parseFloat(m.total) || 0 }));
+    parModeRecettes.forEach((m) => {
+      if (!parModeFusion.has(m.mode_paiement)) parModeFusion.set(m.mode_paiement, { mode_paiement: m.mode_paiement, nb: 0, total: 0 });
+      const row = parModeFusion.get(m.mode_paiement);
+      row.nb += m.nb;
+      row.total += parseFloat(m.total) || 0;
+    });
+    const parModeCombine = [...parModeFusion.values()];
+
+    const totalEncaisse = paiements.reduce((s, p) => s + (parseFloat(p.montant_usd) || 0), 0)
+      + recettesDiverses.reduce((s, r) => s + (parseFloat(r.montant_usd) || 0), 0);
     const ecole = await getEcole();
     const { devise, taux } = await resolveDevise(req);
     const generatedBy = req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null;
     const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
     const MOTIF_LABELS = { scolarite: 'Scolarité', inscription: 'Inscription', uniforme: 'Uniforme', fournitures: 'Fournitures', cantine: 'Cantine', transport: 'Transport', excursion: 'Excursion', examen: 'Examen', assurance: 'Assurance', activites: 'Activités', autre: 'Autre' };
+    const CATEGORIES_RECETTES_LABELS = { subvention: 'Subvention', don: 'Don', vente: 'Vente de biens/services', location: 'Location de salle/matériel', autre: 'Autre' };
     const totalEncaisseAffiche = devise === 'USD' ? totalEncaisse : totalEncaisse * taux;
     const decimalesTotal = devise === 'USD' ? 2 : 0;
 
@@ -516,16 +562,16 @@ router.get('/download/periode.xlsx', async (req, res) => {
     const resume = workbook.addWorksheet('Résumé');
     let r = addLetterhead(resume, {
       ecole, title: `${labelType} — ${periodeLabel}`,
-      subtitle: `${paiements.length} paiement(s) — Total encaissé : ${totalEncaisseAffiche.toLocaleString('fr-FR', { minimumFractionDigits: decimalesTotal, maximumFractionDigits: decimalesTotal })} ${deviseLabel(devise)}`,
+      subtitle: `${paiements.length} paiement(s)${recettesDiverses.length > 0 ? ` + ${recettesDiverses.length} recette(s) diverse(s)` : ''} — Total encaissé : ${totalEncaisseAffiche.toLocaleString('fr-FR', { minimumFractionDigits: decimalesTotal, maximumFractionDigits: decimalesTotal })} ${deviseLabel(devise)}`,
       generatedBy, numCols: 3,
     });
     r = addTable(resume, r, [
       { header: 'Mode de paiement', key: 'label', width: 24, type: 'text' },
       { header: 'Nombre', key: 'nb', width: 14, type: 'number', totalize: true },
       { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
-    ], parMode.map((m) => ({ label: MODE_LABELS[m.mode_paiement] || m.mode_paiement, nb: m.nb, total: parseFloat(m.total) || 0 })), { showTotals: true, devise, taux });
+    ], parModeCombine.map((m) => ({ label: MODE_LABELS[m.mode_paiement] || m.mode_paiement, nb: m.nb, total: m.total })), { showTotals: true, devise, taux });
 
-    resume.getCell(`A${r}`).value = 'Répartition par motif';
+    resume.getCell(`A${r}`).value = 'Répartition par motif (paiements élèves)';
     resume.getCell(`A${r}`).font = { bold: true, size: 11, color: { argb: 'FF065F46' } };
     r += 1;
     r = addTable(resume, r, [
@@ -534,14 +580,25 @@ router.get('/download/periode.xlsx', async (req, res) => {
       { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
     ], parMotif.map((m) => ({ label: MOTIF_LABELS[m.type_paiement] || m.type_paiement, nb: m.nb, total: parseFloat(m.total) || 0 })), { showTotals: true, devise, taux });
 
-    resume.getCell(`A${r}`).value = 'Répartition par classe';
+    resume.getCell(`A${r}`).value = 'Répartition par classe (paiements élèves)';
     resume.getCell(`A${r}`).font = { bold: true, size: 11, color: { argb: 'FF065F46' } };
     r += 1;
-    addTable(resume, r, [
+    r = addTable(resume, r, [
       { header: 'Classe', key: 'classe', width: 24, type: 'text' },
       { header: 'Nombre', key: 'nb', width: 14, type: 'number', totalize: true },
       { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
     ], parClasse.map((c) => ({ classe: c.classe || '—', nb: c.nb, total: parseFloat(c.total) || 0 })), { showTotals: true, devise, taux });
+
+    if (parCategorieRecettes.length > 0) {
+      resume.getCell(`A${r}`).value = 'Répartition des recettes diverses par catégorie';
+      resume.getCell(`A${r}`).font = { bold: true, size: 11, color: { argb: 'FF065F46' } };
+      r += 1;
+      addTable(resume, r, [
+        { header: 'Catégorie', key: 'label', width: 24, type: 'text' },
+        { header: 'Nombre', key: 'nb', width: 14, type: 'number', totalize: true },
+        { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
+      ], parCategorieRecettes.map((c) => ({ label: CATEGORIES_RECETTES_LABELS[c.categorie] || c.categorie, nb: c.nb, total: parseFloat(c.total) || 0 })), { showTotals: true, devise, taux });
+    }
 
     // --- Feuille 2 : Détail des paiements ---
     const detail = workbook.addWorksheet('Détail des paiements', { views: [{ state: 'frozen', ySplit: 8 }] });
@@ -565,6 +622,27 @@ router.get('/download/periode.xlsx', async (req, res) => {
       montant: parseFloat(p.montant_usd) || 0, date: new Date(p.date_paiement).toLocaleString('fr-FR'),
       encaisse_par: p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—',
     })), { showTotals: true, devise, taux });
+
+    if (recettesDiverses.length > 0) {
+      const detailRecettes = workbook.addWorksheet('Détail des recettes diverses', { views: [{ state: 'frozen', ySplit: 8 }] });
+      const detailRecettesCols = [
+        { header: 'Référence', key: 'reference', width: 22, type: 'text' },
+        { header: 'Catégorie', key: 'categorie', width: 22, type: 'text' },
+        { header: 'Provenance', key: 'provenance', width: 22, type: 'text' },
+        { header: 'Mode', key: 'mode', width: 16, type: 'text' },
+        { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+        { header: 'Date', key: 'date', width: 18, type: 'text' },
+        { header: 'Encaissé par', key: 'encaisse_par', width: 20, type: 'text' },
+      ];
+      const rRecettes = addLetterhead(detailRecettes, {
+        ecole, title: `${labelType} — Détail des recettes diverses`, subtitle: periodeLabel, generatedBy, numCols: detailRecettesCols.length,
+      });
+      addTable(detailRecettes, rRecettes, detailRecettesCols, recettesDiverses.map((rec) => ({
+        reference: rec.reference, categorie: CATEGORIES_RECETTES_LABELS[rec.categorie] || rec.categorie, provenance: rec.provenance || '—',
+        mode: MODE_LABELS[rec.mode_paiement] || rec.mode_paiement, montant: parseFloat(rec.montant_usd) || 0,
+        date: new Date(rec.date_recette).toLocaleString('fr-FR'), encaisse_par: rec.cpt_prenom ? `${rec.cpt_prenom} ${rec.cpt_nom}` : '—',
+      })), { showTotals: true, devise, taux });
+    }
 
     await sendWorkbook(res, workbook, `rapport_${type}_${sqlFmt(debut).slice(0, 10)}.xlsx`);
   } catch (e) {

@@ -1,10 +1,46 @@
 const express = require('express');
 const db = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
-const { getEcole, getParam } = require('../utils/helpers');
+const { getEcole, getParam, hasPermission } = require('../utils/helpers');
 
 const router = express.Router();
 router.use(requireAuth);
+
+// Fusionne l'evolution mensuelle des paiements et des recettes diverses sur les memes mois
+// ("Evolution des encaissements") : un don/une subvention est un encaissement reel comme un
+// paiement d'eleve, doit donc y compter -- "+=" et jamais "=" pour ne pas ecraser le total
+// paiements d'un mois qui a aussi une recette diverse ce mois-la (meme piege que dans
+// comptabilite.js/resume).
+function fusionnerMensuel(paiementsRows, recettesRows) {
+  const moisMap = new Map();
+  paiementsRows.forEach((m) => moisMap.set(m.mk, { mk: m.mk, lbl: m.lbl, total: parseFloat(m.total) || 0, nb: m.nb }));
+  recettesRows.forEach((m) => {
+    if (!moisMap.has(m.mk)) moisMap.set(m.mk, { mk: m.mk, lbl: m.lbl, total: 0, nb: 0 });
+    const row = moisMap.get(m.mk);
+    row.total += parseFloat(m.total) || 0;
+    row.nb += m.nb;
+  });
+  return [...moisMap.values()].sort((a, b) => a.mk.localeCompare(b.mk));
+}
+
+// GET /api/dashboard/alertes  (compteurs pour le bandeau de rappel, au-dessus de la barre
+// superieure -- pas de requirePermission ici : chaque compteur est calcule seulement si
+// l'utilisateur a la permission correspondante, pour eviter d'exposer un chiffre sur une
+// tache qu'il ne peut de toute facon pas traiter).
+router.get('/alertes', async (req, res) => {
+  let elevesEnAttenteOrientation = 0;
+  if (hasPermission(req.user, 'eleves')) {
+    const [[row]] = await db.query("SELECT COUNT(*) as n FROM eleves WHERE en_attente_orientation=1 AND statut='actif'");
+    elevesEnAttenteOrientation = row.n;
+  }
+  let remboursementsEnAttente = 0;
+  if (hasPermission(req.user, 'remboursements')) {
+    const [[demandes]] = await db.query("SELECT COUNT(*) as n FROM remboursements WHERE statut='en_attente'");
+    const [[surplus]] = await db.query("SELECT COUNT(*) as n FROM paiements WHERE montant_surplus>0 AND surplus_rembourse=0 AND statut='valide'");
+    remboursementsEnAttente = demandes.n + surplus.n;
+  }
+  res.json({ elevesEnAttenteOrientation, remboursementsEnAttente });
+});
 
 // GET /api/dashboard?annee=  (annee: consulter une annee passee, lecture seule)
 router.get('/', async (req, res) => {
@@ -25,14 +61,19 @@ router.get('/', async (req, res) => {
       [annee]
     );
     const [[{ totalClasses }]] = await db.query('SELECT COUNT(DISTINCT classe_id) as totalClasses FROM archives_annuelles WHERE annee_scolaire=?', [annee]);
-    const [[{ totalAnnee }]] = await db.query(
-      "SELECT COALESCE(SUM(montant_usd),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
+    // montant_usd + montant_surplus : "Total encaisse" doit refleter l'argent reellement
+    // recu en caisse, y compris la part en surplus (pas encore rendue a la famille) -- pas
+    // seulement la part appliquee a la dette de l'eleve. Voir le meme choix dans le
+    // commentaire ci-dessous pour totalAnneeScolarite, qui lui reste volontairement capped.
+    const [[{ totalAnnee: totalAnneePaiements }]] = await db.query(
+      "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
     );
     // Le taux de recouvrement compare ce qui a ete paye de scolarite a ce qui est attendu
     // de scolarite (totalAttendu, base sur frais_scolarite_total) : melanger les frais
     // d'inscription/divers dans le numerateur gonflait artificiellement ce taux a chaque
-    // paiement d'un autre motif. totalAnnee (tous types confondus) reste utilise tel quel
-    // pour "Total encaisse" et "Solde net", qui doivent eux inclure toutes les recettes.
+    // paiement d'un autre motif -- et un surplus (au-dela de ce qui est du) ne doit pas non
+    // plus gonfler ce taux specifique, contrairement a "Total encaisse"/"Solde net"
+    // ci-dessus qui doivent eux inclure toutes les recettes, surplus compris.
     const [[{ totalAnneeScolarite }]] = await db.query(
       "SELECT COALESCE(SUM(montant_usd),0) as totalAnneeScolarite FROM paiements WHERE annee_scolaire=? AND statut='valide' AND type_paiement='scolarite'", [annee]
     );
@@ -46,15 +87,31 @@ router.get('/', async (req, res) => {
     const [[{ totalDepenses }]] = await db.query(
       "SELECT COALESCE(SUM(montant_usd),0) as totalDepenses FROM depenses WHERE annee_scolaire=?", [annee]
     );
+    // Recettes diverses (subventions, dons...) : memes conventions que depenses ci-dessus.
+    // Comptent comme un encaissement a part entiere (comme dans comptabilite.js/resume) :
+    // pliees directement dans totalAnnee, pas seulement dans soldeNet, sinon un don resterait
+    // invisible sur la carte "Total encaisse" alors qu'il apparait deja dans "Solde net".
+    const [[{ totalRecettesDiverses }]] = await db.query(
+      "SELECT COALESCE(SUM(montant_usd),0) as totalRecettesDiverses FROM recettes_diverses WHERE annee_scolaire=?", [annee]
+    );
+    const totalAnnee = totalAnneePaiements + totalRecettesDiverses;
     const soldeNet = totalAnnee - totalDepenses;
 
-    const [mensuel] = await db.query(
+    const [mensuelPaiements] = await db.query(
       `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
-              SUM(montant_usd) as total, COUNT(*) as nb
+              SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)) as total, COUNT(*) as nb
        FROM paiements WHERE statut='valide' AND annee_scolaire=?
        GROUP BY DATE_FORMAT(date_paiement,'%Y-%m') ORDER BY mk ASC`,
       [annee]
     );
+    const [mensuelRecettesDiverses] = await db.query(
+      `SELECT DATE_FORMAT(date_recette,'%Y-%m') as mk, DATE_FORMAT(date_recette,'%b %Y') as lbl,
+              SUM(montant_usd) as total, COUNT(*) as nb
+       FROM recettes_diverses WHERE annee_scolaire=?
+       GROUP BY DATE_FORMAT(date_recette,'%Y-%m') ORDER BY mk ASC`,
+      [annee]
+    );
+    const mensuel = fusionnerMensuel(mensuelPaiements, mensuelRecettesDiverses);
 
     const [parClasse] = await db.query(
       `SELECT c.nom as classe, COUNT(a.id) as nb_eleves,
@@ -79,7 +136,7 @@ router.get('/', async (req, res) => {
         totalEleves, totalFilles, totalGarcons, totalClasses,
         totalAnnee, paiementsAujourdhui: 0, paiementsMois: 0, totalAttendu, taux,
         elevesSoldes, elevesNonSoldes, payF: 0, payM: 0,
-        totalDepenses, soldeNet,
+        totalDepenses, totalRecettesDiverses, soldeNet,
       },
       mensuel, parClasse, derniers,
     });
@@ -90,15 +147,28 @@ router.get('/', async (req, res) => {
   const [[{ totalGarcons }]] = await db.query("SELECT COUNT(*) as totalGarcons FROM eleves WHERE statut='actif' AND genre='M'");
   const [[{ totalClasses }]] = await db.query('SELECT COUNT(*) as totalClasses FROM classes WHERE actif=1');
 
-  const [[{ totalAnnee }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
+  // montant_usd + montant_surplus : voir le commentaire equivalent dans la branche
+  // historique ci-dessus -- l'argent recu en surplus fait partie de l'encaissement reel.
+  const [[{ totalAnnee: totalAnneePaiements }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
   );
-  const [[{ paiementsAujourdhui }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as paiementsAujourdhui FROM paiements WHERE DATE(date_paiement)=CURDATE() AND statut='valide' AND annee_scolaire=?", [annee]
+  const [[{ paiementsAujourdhui: paiementsAujourdhuiPaiements }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as paiementsAujourdhui FROM paiements WHERE DATE(date_paiement)=CURDATE() AND statut='valide' AND annee_scolaire=?", [annee]
   );
-  const [[{ paiementsMois }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as paiementsMois FROM paiements WHERE MONTH(date_paiement)=MONTH(CURDATE()) AND YEAR(date_paiement)=YEAR(CURDATE()) AND statut='valide' AND annee_scolaire=?", [annee]
+  const [[{ paiementsMois: paiementsMoisPaiements }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as paiementsMois FROM paiements WHERE MONTH(date_paiement)=MONTH(CURDATE()) AND YEAR(date_paiement)=YEAR(CURDATE()) AND statut='valide' AND annee_scolaire=?", [annee]
   );
+  // Recettes diverses recues aujourd'hui/ce mois-ci : un don/une subvention est un
+  // encaissement reel au meme titre qu'un paiement d'eleve, doit donc compter ici aussi
+  // (sinon invisible sur "Aujourd'hui" alors que deja compte dans "Solde net").
+  const [[{ recettesDiversesAujourdhui }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd),0) as recettesDiversesAujourdhui FROM recettes_diverses WHERE DATE(date_recette)=CURDATE() AND annee_scolaire=?", [annee]
+  );
+  const [[{ recettesDiversesMois }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd),0) as recettesDiversesMois FROM recettes_diverses WHERE MONTH(date_recette)=MONTH(CURDATE()) AND YEAR(date_recette)=YEAR(CURDATE()) AND annee_scolaire=?", [annee]
+  );
+  const paiementsAujourdhui = paiementsAujourdhuiPaiements + recettesDiversesAujourdhui;
+  const paiementsMois = paiementsMoisPaiements + recettesDiversesMois;
   const [[{ totalAttendu }]] = await db.query(
     "SELECT COALESCE(SUM(frais_scolarite_total),0) as totalAttendu FROM eleves WHERE statut='actif' AND annee_scolaire=?", [annee]
   );
@@ -121,15 +191,28 @@ router.get('/', async (req, res) => {
   const [[{ totalDepenses }]] = await db.query(
     "SELECT COALESCE(SUM(montant_usd),0) as totalDepenses FROM depenses WHERE annee_scolaire=?", [annee]
   );
+  // Voir commentaire equivalent dans la branche historique ci-dessus.
+  const [[{ totalRecettesDiverses }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd),0) as totalRecettesDiverses FROM recettes_diverses WHERE annee_scolaire=?", [annee]
+  );
+  const totalAnnee = totalAnneePaiements + totalRecettesDiverses;
   const soldeNet = totalAnnee - totalDepenses;
 
-  const [mensuel] = await db.query(
+  const [mensuelPaiements] = await db.query(
     `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
-            SUM(montant_usd) as total, COUNT(*) as nb
+            SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)) as total, COUNT(*) as nb
      FROM paiements WHERE statut='valide' AND annee_scolaire=? AND date_paiement >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
      GROUP BY DATE_FORMAT(date_paiement,'%Y-%m') ORDER BY mk ASC`,
     [annee]
   );
+  const [mensuelRecettesDiverses] = await db.query(
+    `SELECT DATE_FORMAT(date_recette,'%Y-%m') as mk, DATE_FORMAT(date_recette,'%b %Y') as lbl,
+            SUM(montant_usd) as total, COUNT(*) as nb
+     FROM recettes_diverses WHERE annee_scolaire=? AND date_recette >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+     GROUP BY DATE_FORMAT(date_recette,'%Y-%m') ORDER BY mk ASC`,
+    [annee]
+  );
+  const mensuel = fusionnerMensuel(mensuelPaiements, mensuelRecettesDiverses);
 
   const [parClasse] = await db.query(
     `SELECT c.nom as classe, COUNT(DISTINCT e.id) as nb_eleves,
@@ -140,10 +223,10 @@ router.get('/', async (req, res) => {
   );
 
   const [[{ payF }]] = await db.query(
-    "SELECT COALESCE(SUM(p.montant_usd),0) as payF FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='F' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide' AND p.annee_scolaire=?", [annee]
+    "SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as payF FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='F' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide' AND p.annee_scolaire=?", [annee]
   );
   const [[{ payM }]] = await db.query(
-    "SELECT COALESCE(SUM(p.montant_usd),0) as payM FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='M' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide' AND p.annee_scolaire=?", [annee]
+    "SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as payM FROM paiements p JOIN eleves e ON e.id=p.eleve_id WHERE e.genre='M' AND MONTH(p.date_paiement)=MONTH(CURDATE()) AND p.statut='valide' AND p.annee_scolaire=?", [annee]
   );
 
   const [derniers] = await db.query(
@@ -160,7 +243,7 @@ router.get('/', async (req, res) => {
       totalEleves, totalFilles, totalGarcons, totalClasses,
       totalAnnee, paiementsAujourdhui, paiementsMois, totalAttendu, taux,
       elevesSoldes, elevesNonSoldes, payF, payM,
-      totalDepenses, soldeNet,
+      totalDepenses, totalRecettesDiverses, soldeNet,
     },
     mensuel, parClasse, derniers,
   });

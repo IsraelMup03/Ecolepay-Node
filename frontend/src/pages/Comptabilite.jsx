@@ -9,11 +9,13 @@ import GenererRapportButton from '../components/GenererRapportButton.jsx';
 const COLORS = ['#059669', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626', '#0891b2', '#c026d3', '#ea580c', '#4f46e5', '#65a30d', '#db2777', '#78716c'];
 const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
 const DEPENSE_FORM_INIT = { categorie: 'autre', montant: '', devise: 'USD', mode_paiement: 'especes', beneficiaire: '', description: '' };
+const RECETTE_FORM_INIT = { categorie: 'autre', montant: '', devise: 'USD', mode_paiement: 'especes', provenance: '', description: '' };
 
 export default function Comptabilite() {
   const { viewingAnnee } = useAnnee();
   const { format, devise, convert } = useDevise();
   const [resume, setResume] = useState(null);
+  const [tab, setTab] = useState('depenses');
   const [depenses, setDepenses] = useState([]);
   const [meta, setMeta] = useState({ total: 0, somme: 0, totalPages: 1 });
   const [page, setPage] = useState(1);
@@ -25,6 +27,18 @@ export default function Comptabilite() {
   const [form, setForm] = useState(DEPENSE_FORM_INIT);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [recettes, setRecettes] = useState([]);
+  const [metaRecettes, setMetaRecettes] = useState({ total: 0, somme: 0, totalPages: 1 });
+  const [pageRecettes, setPageRecettes] = useState(1);
+  const [categorieFiltreRecettes, setCategorieFiltreRecettes] = useState('');
+  const [qRecettes, setQRecettes] = useState('');
+  const [loadingRecettes, setLoadingRecettes] = useState(true);
+  const [showModalRecette, setShowModalRecette] = useState(false);
+  const [editingRecette, setEditingRecette] = useState(null);
+  const [formRecette, setFormRecette] = useState(RECETTE_FORM_INIT);
+  const [errorRecette, setErrorRecette] = useState('');
+  const [savingRecette, setSavingRecette] = useState(false);
 
   async function loadResume() {
     const params = viewingAnnee ? { annee: viewingAnnee } : {};
@@ -40,10 +54,21 @@ export default function Comptabilite() {
     setMeta(res.data);
     setLoading(false);
   }
+  async function loadRecettes() {
+    setLoadingRecettes(true);
+    const params = { page: pageRecettes, categorie: categorieFiltreRecettes, q: qRecettes };
+    if (viewingAnnee) params.annee = viewingAnnee;
+    const res = await client.get('/comptabilite/recettes-diverses', { params });
+    setRecettes(res.data.recettes);
+    setMetaRecettes(res.data);
+    setLoadingRecettes(false);
+  }
 
   useEffect(() => { loadResume(); /* eslint-disable-next-line */ }, [viewingAnnee]);
   useEffect(() => { setPage(1); }, [categorieFiltre, q, viewingAnnee]);
   useEffect(() => { const t = setTimeout(loadDepenses, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [page, categorieFiltre, q, viewingAnnee]);
+  useEffect(() => { setPageRecettes(1); }, [categorieFiltreRecettes, qRecettes, viewingAnnee]);
+  useEffect(() => { const t = setTimeout(loadRecettes, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [pageRecettes, categorieFiltreRecettes, qRecettes, viewingAnnee]);
 
   function openNew() {
     setEditing(null);
@@ -95,6 +120,56 @@ export default function Comptabilite() {
       });
   }
 
+  function openNewRecette() {
+    setEditingRecette(null);
+    setFormRecette(RECETTE_FORM_INIT);
+    setErrorRecette('');
+    setShowModalRecette(true);
+  }
+  function openEditRecette(r) {
+    setEditingRecette(r);
+    setFormRecette({ categorie: r.categorie, montant: r.montant, devise: r.devise, mode_paiement: r.mode_paiement, provenance: r.provenance || '', description: r.description || '' });
+    setErrorRecette('');
+    setShowModalRecette(true);
+  }
+
+  async function handleSubmitRecette(e) {
+    e.preventDefault();
+    setErrorRecette('');
+    setSavingRecette(true);
+    try {
+      if (editingRecette) await client.put(`/comptabilite/recettes-diverses/${editingRecette.id}`, formRecette);
+      else await client.post('/comptabilite/recettes-diverses', formRecette);
+      setShowModalRecette(false);
+      loadRecettes();
+      loadResume();
+    } catch (err) {
+      setErrorRecette(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setSavingRecette(false);
+    }
+  }
+
+  async function supprimerRecette(r) {
+    if (!window.confirm(`Supprimer la recette "${r.reference}" ? Elle sera déplacée vers la corbeille et pourra être restaurée pendant 30 jours.`)) return;
+    await client.delete(`/comptabilite/recettes-diverses/${r.id}`);
+    loadRecettes();
+    loadResume();
+  }
+
+  function exportRecettes() {
+    const token = localStorage.getItem('ecolepay_token');
+    const params = new URLSearchParams({ categorie: categorieFiltreRecettes, q: qRecettes, devise, ...(viewingAnnee ? { annee: viewingAnnee } : {}) }).toString();
+    fetch(`${API_URL}/comptabilite/recettes-diverses/export.xlsx?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => res.blob())
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `recettes_diverses_${Date.now()}.xlsx`; a.click();
+        window.URL.revokeObjectURL(url);
+      });
+  }
+
   if (!resume) return <div className="loading-screen"><div className="spinner spinner-lg"></div><p>Chargement de la comptabilité...</p></div>;
 
   const pieData = resume.depensesParCategorie.map((c) => ({ name: c.categorie, value: c.total }));
@@ -105,6 +180,7 @@ export default function Comptabilite() {
         <div className="text-muted">Année {resume.annee}{resume.modeHistorique ? ' — lecture seule' : ''}</div>
         <div className="flex gap-8">
           <GenererRapportButton endpoint="/comptabilite/rapport.xlsx" filePrefix="comptabilite" />
+          {!viewingAnnee && <button className="btn btn-outline" onClick={openNewRecette}><i className="ph ph-plus"></i> Nouvelle entrée</button>}
           {!viewingAnnee && <button className="btn btn-accent" onClick={openNew}><i className="ph ph-plus"></i> Nouvelle sortie</button>}
         </div>
       </div>
@@ -171,62 +247,122 @@ export default function Comptabilite() {
       </div>
 
       <div className="card">
-        <div className="card-header">
-          <i className="ph ph-list-checks"></i><h3>Dépenses ({meta.total})</h3>
-          <div className="card-actions">
-            <button className="btn btn-outline btn-sm" onClick={exportDepenses}><i className="ph ph-file-xls"></i> Exporter (Excel)</button>
+        <div className="flex-between" style={{ padding: '14px 18px 0' }}>
+          <div className="tabs" style={{ marginBottom: 0, borderBottom: 'none' }}>
+            <button type="button" className={tab === 'depenses' ? 'active' : ''} onClick={() => setTab('depenses')}>Dépenses ({meta.total})</button>
+            <button type="button" className={tab === 'recettes' ? 'active' : ''} onClick={() => setTab('recettes')}>Recettes diverses ({metaRecettes.total})</button>
           </div>
+          <button className="btn btn-outline btn-sm" onClick={tab === 'depenses' ? exportDepenses : exportRecettes}><i className="ph ph-file-xls"></i> Exporter (Excel)</button>
         </div>
-        <div className="filters-bar" style={{ padding: '0 18px', marginTop: 12 }}>
-          <div className="search-input-wrap" style={{ flex: 1, minWidth: 200 }}>
-            <i className="ph ph-magnifying-glass"></i>
-            <input placeholder="Référence, bénéficiaire, description..." value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <select value={categorieFiltre} onChange={(e) => setCategorieFiltre(e.target.value)}>
-              <option value="">Toutes les catégories</option>
-              {Object.entries(resume.categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="table-container">
-          <table>
-            <thead><tr><th>Référence</th><th>Catégorie</th><th>Bénéficiaire</th><th>Montant</th><th>Mode</th><th>Date</th><th>Enregistré par</th><th></th></tr></thead>
-            <tbody>
-              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
-              {!loading && depenses.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-receipt"></i><h3>Aucune dépense trouvée</h3></div></td></tr>}
-              {depenses.map((d) => (
-                <tr key={d.id}>
-                  <td><code>{d.reference}</code></td>
-                  <td><span className="badge badge-info">{resume.categories[d.categorie] || d.categorie}</span></td>
-                  <td>{d.beneficiaire || '—'}</td>
-                  <td><strong style={{ color: 'var(--danger)' }}>{format(d.montant_usd)}</strong></td>
-                  <td>{MODE_LABELS[d.mode_paiement] || d.mode_paiement}</td>
-                  <td className="text-muted">{new Date(d.date_depense).toLocaleString('fr-FR')}</td>
-                  <td className="text-muted">{d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—'}</td>
-                  <td>
-                    {!viewingAnnee && (
-                      <RowMenu>
-                        {(close) => (
-                          <>
-                            <button onClick={() => { openEdit(d); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
-                            <button className="danger" onClick={() => { supprimer(d); close(); }}><i className="ph ph-trash"></i> Supprimer</button>
-                          </>
+
+        {tab === 'depenses' ? (
+          <>
+            <div className="filters-bar" style={{ padding: '0 18px', marginTop: 12 }}>
+              <div className="search-input-wrap" style={{ flex: 1, minWidth: 200 }}>
+                <i className="ph ph-magnifying-glass"></i>
+                <input placeholder="Référence, bénéficiaire, description..." value={q} onChange={(e) => setQ(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <select value={categorieFiltre} onChange={(e) => setCategorieFiltre(e.target.value)}>
+                  <option value="">Toutes les catégories</option>
+                  {Object.entries(resume.categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="table-container">
+              <table>
+                <thead><tr><th>Référence</th><th>Catégorie</th><th>Bénéficiaire</th><th>Montant</th><th>Mode</th><th>Date</th><th>Enregistré par</th><th></th></tr></thead>
+                <tbody>
+                  {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+                  {!loading && depenses.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-receipt"></i><h3>Aucune dépense trouvée</h3></div></td></tr>}
+                  {depenses.map((d) => (
+                    <tr key={d.id}>
+                      <td><code>{d.reference}</code></td>
+                      <td><span className="badge badge-info">{resume.categories[d.categorie] || d.categorie}</span></td>
+                      <td>{d.beneficiaire || '—'}</td>
+                      <td><strong style={{ color: 'var(--danger)' }}>{format(d.montant_usd)}</strong></td>
+                      <td>{MODE_LABELS[d.mode_paiement] || d.mode_paiement}</td>
+                      <td className="text-muted">{new Date(d.date_depense).toLocaleString('fr-FR')}</td>
+                      <td className="text-muted">{d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—'}</td>
+                      <td>
+                        {!viewingAnnee && (
+                          <RowMenu>
+                            {(close) => (
+                              <>
+                                <button onClick={() => { openEdit(d); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
+                                <button className="danger" onClick={() => { supprimer(d); close(); }}><i className="ph ph-trash"></i> Supprimer</button>
+                              </>
+                            )}
+                          </RowMenu>
                         )}
-                      </RowMenu>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {meta.totalPages > 1 && (
-          <div className="pagination">
-            <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Précédent</button>
-            <span className="text-muted" style={{ padding: '6px 10px' }}>Page {page} / {meta.totalPages}</span>
-            <button className="btn btn-outline btn-sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>Suivant</button>
-          </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {meta.totalPages > 1 && (
+              <div className="pagination">
+                <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Précédent</button>
+                <span className="text-muted" style={{ padding: '6px 10px' }}>Page {page} / {meta.totalPages}</span>
+                <button className="btn btn-outline btn-sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>Suivant</button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="filters-bar" style={{ padding: '0 18px', marginTop: 12 }}>
+              <div className="search-input-wrap" style={{ flex: 1, minWidth: 200 }}>
+                <i className="ph ph-magnifying-glass"></i>
+                <input placeholder="Référence, provenance, description..." value={qRecettes} onChange={(e) => setQRecettes(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <select value={categorieFiltreRecettes} onChange={(e) => setCategorieFiltreRecettes(e.target.value)}>
+                  <option value="">Toutes les catégories</option>
+                  {resume.categoriesRecettes && Object.entries(resume.categoriesRecettes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="table-container">
+              <table>
+                <thead><tr><th>Référence</th><th>Catégorie</th><th>Provenance</th><th>Montant</th><th>Mode</th><th>Date</th><th>Enregistré par</th><th></th></tr></thead>
+                <tbody>
+                  {loadingRecettes && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+                  {!loadingRecettes && recettes.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-receipt"></i><h3>Aucune recette diverse trouvée</h3></div></td></tr>}
+                  {recettes.map((r) => (
+                    <tr key={r.id}>
+                      <td><code>{r.reference}</code></td>
+                      <td><span className="badge badge-info">{(resume.categoriesRecettes && resume.categoriesRecettes[r.categorie]) || r.categorie}</span></td>
+                      <td>{r.provenance || '—'}</td>
+                      <td><strong style={{ color: 'var(--success)' }}>{format(r.montant_usd)}</strong></td>
+                      <td>{MODE_LABELS[r.mode_paiement] || r.mode_paiement}</td>
+                      <td className="text-muted">{new Date(r.date_recette).toLocaleString('fr-FR')}</td>
+                      <td className="text-muted">{r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—'}</td>
+                      <td>
+                        {!viewingAnnee && (
+                          <RowMenu>
+                            {(close) => (
+                              <>
+                                <button onClick={() => { openEditRecette(r); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
+                                <button className="danger" onClick={() => { supprimerRecette(r); close(); }}><i className="ph ph-trash"></i> Supprimer</button>
+                              </>
+                            )}
+                          </RowMenu>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {metaRecettes.totalPages > 1 && (
+              <div className="pagination">
+                <button className="btn btn-outline btn-sm" disabled={pageRecettes <= 1} onClick={() => setPageRecettes((p) => p - 1)}>Précédent</button>
+                <span className="text-muted" style={{ padding: '6px 10px' }}>Page {pageRecettes} / {metaRecettes.totalPages}</span>
+                <button className="btn btn-outline btn-sm" disabled={pageRecettes >= metaRecettes.totalPages} onClick={() => setPageRecettes((p) => p + 1)}>Suivant</button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -283,6 +419,64 @@ export default function Comptabilite() {
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Annuler</button>
               <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : editing ? 'Enregistrer' : 'Valider la sortie'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${showModalRecette ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModalRecette(false)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className={editingRecette ? 'ph ph-pencil-simple' : 'ph ph-money'}></i><h3>{editingRecette ? 'Modifier la recette' : 'Nouvelle entrée'}</h3>
+            <button className="modal-close" onClick={() => setShowModalRecette(false)}><i className="ph ph-x"></i></button>
+          </div>
+          <form onSubmit={handleSubmitRecette}>
+            <div className="modal-body">
+              {errorRecette && <div className="alert alert-danger">{errorRecette}</div>}
+              <div className="form-grid">
+                <div className="form-grid form-grid-2">
+                  <div className="form-group">
+                    <label>Catégorie</label>
+                    <select value={formRecette.categorie} onChange={(e) => setFormRecette({ ...formRecette, categorie: e.target.value })}>
+                      {resume.categoriesRecettes && Object.entries(resume.categoriesRecettes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Mode de paiement</label>
+                    <select value={formRecette.mode_paiement} onChange={(e) => setFormRecette({ ...formRecette, mode_paiement: e.target.value })}>
+                      <option value="especes">Espèces</option>
+                      <option value="mobile_money">Mobile Money</option>
+                      <option value="virement">Virement</option>
+                      <option value="cheque">Chèque</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-grid form-grid-2">
+                  <div className="form-group">
+                    <label>Montant</label>
+                    <input type="number" step="0.01" min="0" value={formRecette.montant} onChange={(e) => setFormRecette({ ...formRecette, montant: e.target.value })} required />
+                  </div>
+                  <div className="form-group">
+                    <label>Devise</label>
+                    <select value={formRecette.devise} onChange={(e) => setFormRecette({ ...formRecette, devise: e.target.value })}>
+                      <option value="USD">USD</option>
+                      <option value="CDF">CDF</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Provenance (optionnel)</label>
+                  <input placeholder="Ex: Ministère, association de parents, client..." value={formRecette.provenance} onChange={(e) => setFormRecette({ ...formRecette, provenance: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Description (optionnel)</label>
+                  <textarea value={formRecette.description} onChange={(e) => setFormRecette({ ...formRecette, description: e.target.value })} />
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowModalRecette(false)}>Annuler</button>
+              <button type="submit" className="btn btn-accent" disabled={savingRecette}>{savingRecette ? 'Enregistrement...' : editingRecette ? 'Enregistrer' : 'Valider l\'entrée'}</button>
             </div>
           </form>
         </div>

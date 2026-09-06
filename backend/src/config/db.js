@@ -16,6 +16,20 @@ if ((process.env.DB_CLIENT || '').toLowerCase() === 'sqlite') {
     const db = await open({ filename: dbFile, driver: sqlite3.Database });
     // enable foreign keys
     await db.run('PRAGMA foreign_keys = ON');
+    // WAL (Write-Ahead Logging) au lieu du journal par defaut : les lecteurs (dashboard,
+    // rapports...) ne bloquent plus les ecrivains (caisse, comptabilite...) et vice-versa,
+    // ce qui est important des que plusieurs postes du reseau local utilisent le logiciel
+    // en meme temps -- et WAL survit bien mieux a une coupure de courant en plein
+    // encaissement qu'un journal rollback classique.
+    await db.run('PRAGMA journal_mode = WAL');
+    // synchronous=NORMAL est le reglage recommande avec WAL : securite suffisante contre
+    // la corruption (toujours sur en cas de crash de l'appli) pour un net gain de vitesse
+    // par rapport a FULL, sans les risques de synchronous=OFF.
+    await db.run('PRAGMA synchronous = NORMAL');
+    // Si deux ecritures se chevauchent malgre tout (deux caisses qui valident au meme
+    // instant), la seconde attend jusqu'a 5s au lieu d'echouer immediatement avec
+    // "database is locked" -- une erreur auparavant possible, maintenant tres rare.
+    await db.run('PRAGMA busy_timeout = 5000');
     return db;
   }
 
@@ -83,7 +97,18 @@ if ((process.env.DB_CLIENT || '').toLowerCase() === 'sqlite') {
     };
   }
 
-  module.exports = { query, getConnection };
+  // Ferme la connexion sqlite sous-jacente : necessaire notamment pour les tests
+  // automatises, qui suppriment leur fichier de base temporaire juste apres -- sur
+  // Windows, un fichier encore ouvert par ce processus ne peut pas etre supprime
+  // (verrou de fichier) tant que sa connexion n'a pas ete explicitement fermee.
+  async function close() {
+    if (!_dbPromise) return;
+    const db = await _dbPromise;
+    _dbPromise = null;
+    await db.close();
+  }
+
+  module.exports = { query, getConnection, close };
 } else {
   const mysql = require('mysql2/promise');
 

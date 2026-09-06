@@ -55,7 +55,7 @@ export default function Recu() {
                 <tbody>
                   <tr><td className="label">Élève</td><td className="value">{p.e_prenom} {p.e_nom}</td></tr>
                   <tr><td className="label">Matricule</td><td className="value">{p.matricule}</td></tr>
-                  <tr><td className="label">Classe</td><td className="value">{p.classe}</td></tr>
+                  <tr><td className="label">Classe</td><td className="value">{p.classe}{p.section ? ` ${p.section}` : ''}</td></tr>
                   <tr><td className="label">Année scolaire</td><td className="value">{p.e_annee || '—'}</td></tr>
                 </tbody>
               </table>

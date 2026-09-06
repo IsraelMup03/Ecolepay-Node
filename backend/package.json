@@ -8,7 +8,8 @@
     "start": "node src/start.js",
     "dev": "nodemon src/start.js",
     "migrate": "node src/migrate.js",
-    "migrate:sqlite": "node src/migrate-sqlite.js"
+    "migrate:sqlite": "node src/migrate-sqlite.js",
+    "test": "node --test"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

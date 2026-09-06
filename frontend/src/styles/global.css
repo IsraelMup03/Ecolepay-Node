@@ -122,6 +122,20 @@ a { color: inherit; }
   font-size: 13px; font-weight: 600;
 }
 .historical-banner i { font-size: 15px; margin-right: 4px; }
+.rappels-banner {
+  background: linear-gradient(135deg, #fdf1de, #fbe3bd);
+  border-bottom: 1px solid #f5c98a;
+  padding: 8px 26px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px;
+}
+.rappels-banner button {
+  background: none; border: none; padding: 4px 0; cursor: pointer;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; color: var(--accent);
+  text-decoration: underline; text-decoration-color: transparent; transition: text-decoration-color .15s var(--ease);
+}
+.rappels-banner button:hover { text-decoration-color: var(--accent); }
+.rappels-banner i { font-size: 15px; }
 .topbar h1 { font-size: 18px; font-weight: 700; letter-spacing: -.2px; }
 .topbar .subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .global-search { position: relative; flex: 1; max-width: 480px; margin: 0 24px; }
@@ -320,6 +334,12 @@ tbody tr:hover { background: #f6f9fc; }
 .progress-bar-fill.green { background: var(--success); }
 .progress-bar-fill.orange { background: var(--accent); }
 .progress-bar-fill.red { background: var(--danger); }
+
+/* Variante compacte : une barre par tranche de scolarite, empilees */
+.progress-bar-wrap.sm { height: 5px; }
+.tranche-row { margin-bottom: 10px; }
+.tranche-row:last-child { margin-bottom: 0; }
+.tranche-row .tranche-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; color: var(--text-muted); }
 
 /* ---------- Alerts ---------- */
 .alert { padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; border-left: 3px solid transparent; }

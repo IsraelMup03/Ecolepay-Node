@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
@@ -116,7 +117,7 @@ app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 // peuvent s'y connecter sans configuration supplementaire -- il suffit de leur communiquer
 // cette adresse. Utile pour un usage multi-utilisateurs (plusieurs postes de l'ecole).
 function adressesReseauLocal() {
-  const interfaces = require('os').networkInterfaces();
+  const interfaces = os.networkInterfaces();
   const adresses = [];
   for (const nom of Object.keys(interfaces)) {
     for (const iface of interfaces[nom]) {
@@ -126,27 +127,42 @@ function adressesReseauLocal() {
   return adresses;
 }
 
-// Copie de sauvegarde de la base de donnees, bien visible a la racine du dossier, que
-// l'ecole est invitee a glisser regulierement vers son cloud (Google Drive, OneDrive...)
-// pour ne jamais perdre ses donnees si cet ordinateur tombe en panne. "VACUUM INTO" (et
-// non une simple copie de fichier) garantit un instantane coherent meme si une ecriture
-// est en cours au moment de la sauvegarde. Ecrite d'abord sous un nom temporaire puis
-// renommee (operation atomique) pour ne jamais laisser une sauvegarde a moitie ecrite si
-// le logiciel est ferme pile pendant la sauvegarde. Seulement en installation "prete a
-// l'emploi" (SERVE_FRONTEND) : inutile de polluer ce dossier de developpement.
+// Copie de sauvegarde de la base de donnees, ecrite a DEUX endroits que l'ecole est
+// invitee a glisser regulierement vers son cloud (Google Drive, OneDrive...) pour ne
+// jamais perdre ses donnees si cet ordinateur tombe en panne : dans le dossier du logiciel
+// (a cote de install.bat, pour qui cherche la ou tout se trouve) ET directement sur le
+// Bureau (l'endroit le plus visible pour un utilisateur non technique, sans avoir a
+// retrouver le dossier d'installation, souvent enfoui dans Program Files). "VACUUM INTO"
+// (et non une simple copie de fichier) garantit un instantane coherent meme si une
+// ecriture est en cours au moment de la sauvegarde -- fait une seule fois vers un fichier
+// maitre temporaire, ensuite duplique vers chaque destination (chacune ecrite d'abord sous
+// un nom temporaire puis renommee, operation atomique, pour ne jamais laisser une
+// sauvegarde a moitie ecrite si le logiciel est ferme pile a ce moment-la). Seulement en
+// installation "prete a l'emploi" (SERVE_FRONTEND) : inutile de polluer le poste de
+// developpement.
 const NOM_SAUVEGARDE = 'COPIE DE SECURITE (a mettre sur le Cloud).sqlite';
 async function sauvegarderBaseDeDonnees() {
   if (!SERVE_FRONTEND) return;
-  const cheminFinal = path.join(__dirname, '../..', NOM_SAUVEGARDE);
-  const cheminTemp = `${cheminFinal}.tmp`;
+  const dossierLogiciel = path.join(__dirname, '../..');
+  const dossierBureau = path.join(os.homedir(), 'Desktop');
+  const cheminMaitre = path.join(dossierLogiciel, `.${NOM_SAUVEGARDE}.tmp`);
   try {
-    if (fs.existsSync(cheminTemp)) fs.unlinkSync(cheminTemp);
+    if (fs.existsSync(cheminMaitre)) fs.unlinkSync(cheminMaitre);
     const db = require('./config/db');
-    await db.query('VACUUM INTO ?', [cheminTemp]);
-    fs.renameSync(cheminTemp, cheminFinal);
-    console.log(`Copie de sauvegarde mise a jour : ${cheminFinal}`);
+    await db.query('VACUUM INTO ?', [cheminMaitre]);
+
+    for (const dossier of [dossierLogiciel, dossierBureau]) {
+      const cheminFinal = path.join(dossier, NOM_SAUVEGARDE);
+      const cheminTemp = `${cheminFinal}.tmp`;
+      fs.mkdirSync(dossier, { recursive: true });
+      fs.copyFileSync(cheminMaitre, cheminTemp);
+      fs.renameSync(cheminTemp, cheminFinal);
+      console.log(`Copie de sauvegarde mise a jour : ${cheminFinal}`);
+    }
   } catch (e) {
     console.error('Echec de la sauvegarde automatique de la base de donnees:', e.message);
+  } finally {
+    try { fs.unlinkSync(cheminMaitre); } catch (e) { /* deja absent ou jamais cree, ignore */ }
   }
 }
 

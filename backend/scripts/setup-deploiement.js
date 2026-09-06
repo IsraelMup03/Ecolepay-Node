@@ -63,7 +63,25 @@ function genererLanceur(port) {
     ')',
     "echo Demarrage d'EcolePay...",
     'start "EcolePay - Serveur (laissez cette fenetre ouverte)" cmd /c "npm start"',
-    'timeout /t 4 /nobreak >nul',
+    'echo Attente du demarrage complet du serveur...',
+    // Un simple "timeout /t X" fixe avant d'ouvrir le navigateur est peu fiable : trop
+    // court sur un PC lent (premier demarrage, antivirus qui scanne node_modules), le
+    // navigateur s'ouvre sur une page qui ne repond pas encore ; trop long, on fait
+    // patienter inutilement l'utilisateur. A la place, on sonde le port toutes les 500ms
+    // jusqu'a ce qu'il devienne joignable -- ce qui ne peut arriver qu'une fois app.listen()
+    // reussi dans server.js, un signal fiable que le serveur est reellement pret a repondre.
+    // Important : TcpClient.Connect() (synchrone) peut rester bloque tres longtemps -- bien
+    // plus que quelques secondes -- quand rien n'ecoute encore sur le port au lieu d'echouer
+    // immediatement (constate en test reel sur cette machine). BeginConnect()/WaitOne(500)
+    // borne donc chaque tentative a 500ms au maximum, meme dans ce cas. 90 essais = 45s de
+    // marge maximum avant d'abandonner.
+    `powershell -NoProfile -Command "$ok=$false; for($i=0;$i -lt 90;$i++){ $c=New-Object System.Net.Sockets.TcpClient; try { $iar=$c.BeginConnect('127.0.0.1',${port},$null,$null); $w=$iar.AsyncWaitHandle.WaitOne(500); if($w -and $c.Connected){ $c.EndConnect($iar); $ok=$true } } catch {} finally { $c.Close() }; if($ok){break} }; if(-not $ok){exit 1}"`,
+    'if errorlevel 1 (',
+    '  echo [ERREUR] Le serveur met trop de temps a demarrer ou n a pas demarre.',
+    '  echo Verifiez la fenetre "EcolePay - Serveur" pour un message d erreur.',
+    '  pause',
+    '  exit /b 1',
+    ')',
     `start "" "http://localhost:${port}"`,
   ];
   return '﻿' + lignes.join('\r\n') + '\r\n';

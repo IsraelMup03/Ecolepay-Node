@@ -24,6 +24,14 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Copie de sauvegarde auto-generee par le serveur (voir backend/src/server.js) : n'a rien
-# a faire dans le depot, chaque installation/poste a la sienne
-COPIE DE SECURITE*.sqlite
+# Copie(s) de sauvegarde auto-generee(s) par le serveur (voir backend/src/server.js) : n'ont
+# rien a faire dans le depot, chaque installation/poste a la sienne. Le second motif couvre
+# le fichier maitre temporaire (prefixe d'un point) au cas ou il resterait suite a un arret
+# brutal en plein milieu d'une sauvegarde.
+COPIE DE SECURITE*
+.COPIE DE SECURITE*
+
+# Fichiers compagnons du mode WAL de SQLite (voir backend/src/config/db.js) : transitoires,
+# regeneres automatiquement, propres a chaque poste -- jamais a versionner.
+*.sqlite-wal
+*.sqlite-shm

@@ -33,8 +33,9 @@ export default function Promotion() {
 
   if (viewingAnnee) return <HistoricalBlock />;
 
-  const nbDiplomes = preview.filter((e) => !e.classe_suivante).length;
-  const nbPromouvables = preview.filter((e) => e.classe_suivante).length;
+  const nbEnAttenteOrientation = preview.filter((e) => e.est_pivot).length;
+  const nbDiplomes = preview.filter((e) => !e.est_pivot && !e.classe_suivante).length;
+  const nbPromouvables = preview.filter((e) => !e.est_pivot && e.classe_suivante).length;
 
   async function executer() {
     if (!nouvelleAnnee.trim()) { setError('Veuillez saisir la nouvelle année scolaire (ex: 2027-2028).'); return; }
@@ -69,9 +70,10 @@ export default function Promotion() {
       <div className="alert alert-warning">
         <i className="ph ph-warning"></i> Cette opération est irréversible. Elle archive la situation financière de l'année en cours,
         puis fait passer chaque élève actif vers sa classe supérieure (ou le diplôme, si aucune classe supérieure n'est définie).
+        Les élèves d'une classe pivot ne sont pas déplacés automatiquement : ils resteront dans leur classe (avec la nouvelle année scolaire) en attente d'un transfert manuel vers la classe qu'ils auront choisie.
       </div>
 
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+      <div className="stat-grid" style={{ gridTemplateColumns: nbEnAttenteOrientation > 0 ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)' }}>
         <div className="stat-card">
           <div className="stat-icon blue"><i className="ph ph-graduation-cap"></i></div>
           <div className="stat-info"><div className="label">Élèves concernés</div><div className="value">{preview.length}</div></div>
@@ -84,6 +86,12 @@ export default function Promotion() {
           <div className="stat-icon purple"><i className="ph ph-medal"></i></div>
           <div className="stat-info"><div className="label">Seront diplômés</div><div className="value">{nbDiplomes}</div></div>
         </div>
+        {nbEnAttenteOrientation > 0 && (
+          <div className="stat-card">
+            <div className="stat-icon orange"><i className="ph ph-git-fork"></i></div>
+            <div className="stat-info"><div className="label">En attente d'orientation</div><div className="value">{nbEnAttenteOrientation}</div></div>
+          </div>
+        )}
       </div>
 
       <div className="card mb-16">
@@ -115,9 +123,11 @@ export default function Promotion() {
                   <td>{e.classe_actuelle}</td>
                   <td>{format(e.total_paye)}</td>
                   <td>
-                    {e.classe_suivante
-                      ? <span className="badge badge-info"><i className="ph ph-arrow-right"></i> {e.classe_suivante}</span>
-                      : <span className="badge badge-success">Diplômé</span>}
+                    {e.est_pivot
+                      ? <span className="badge badge-warning" title="Classe pivot : transfert manuel requis vers la classe choisie."><i className="ph ph-git-fork"></i> En attente d'orientation</span>
+                      : e.classe_suivante
+                        ? <span className="badge badge-info"><i className="ph ph-arrow-right"></i> {e.classe_suivante}</span>
+                        : <span className="badge badge-success">Diplômé</span>}
                   </td>
                 </tr>
               ))}

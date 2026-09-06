@@ -65,8 +65,8 @@ router.put('/ecole', requirePermission('parametres'), upload.single('logo'), asy
 
 // PUT /api/parametres/systeme
 router.put('/systeme', requirePermission('parametres'), async (req, res) => {
-  const { taux_usd_cdf, delai_corbeille, mois_debut_annee, format_matricule, promotion_automatique } = req.body;
-  const updates = { taux_usd_cdf, delai_corbeille, mois_debut_annee, format_matricule, promotion_automatique };
+  const { taux_usd_cdf, delai_corbeille, mois_debut_annee, format_matricule, promotion_automatique, nombre_tranches_scolarite } = req.body;
+  const updates = { taux_usd_cdf, delai_corbeille, mois_debut_annee, format_matricule, promotion_automatique, nombre_tranches_scolarite };
   for (const [cle, valeur] of Object.entries(updates)) {
     if (valeur !== undefined) {
       await db.query('UPDATE parametres SET valeur=? WHERE cle=?', [String(valeur), cle]);
@@ -102,9 +102,14 @@ router.post('/reinitialiser', requireAdmin, async (req, res) => {
     await conn.query('DELETE FROM paiements');
     await conn.query('DELETE FROM archives_annuelles');
     await conn.query('DELETE FROM depenses');
+    await conn.query('DELETE FROM recettes_diverses');
     await conn.query('DELETE FROM corbeille');
     await conn.query('DELETE FROM logs_activite');
     await conn.query('DELETE FROM eleves');
+    // A supprimer avant les classes : sections et classe_tranches referencent classe_id,
+    // supprimer les classes en premier violerait la contrainte de cle etrangere.
+    await conn.query('DELETE FROM classe_tranches');
+    await conn.query('DELETE FROM sections');
     await conn.query('DELETE FROM classes');
     await conn.query('DELETE FROM utilisateurs WHERE id != ?', [req.user.id]);
 
@@ -124,6 +129,7 @@ router.post('/reinitialiser', requireAdmin, async (req, res) => {
       compteur_matricule: '1',
       taux_usd_cdf: '2800',
       rappel_paiement: '1',
+      nombre_tranches_scolarite: '1',
     };
     for (const [cle, valeur] of Object.entries(parametresDefaut)) {
       await conn.query('UPDATE parametres SET valeur=? WHERE cle=?', [valeur, cle]);

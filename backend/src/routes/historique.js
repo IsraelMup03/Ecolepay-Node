@@ -42,6 +42,13 @@ router.get('/:annee', async (req, res) => {
      FROM paiements WHERE annee_scolaire=?`,
     [annee]
   );
+  // Recettes diverses (dons, subventions...) de cette annee scolaire : doivent gonfler
+  // "Total encaisse" ici aussi, exactement comme dans Comptabilite/Tableau de bord --
+  // sinon un don recu une annee resterait invisible dans son propre historique.
+  const [[{ totalRecettesDiverses }]] = await db.query(
+    "SELECT COALESCE(SUM(montant_usd),0) as totalRecettesDiverses FROM recettes_diverses WHERE annee_scolaire=?", [annee]
+  );
+  resume.total_encaisse = (parseFloat(resume.total_encaisse) || 0) + (parseFloat(totalRecettesDiverses) || 0);
   const [paiements] = await db.query(
     `SELECT p.id, p.reference, p.type_paiement, p.montant, p.devise, p.montant_usd, p.mode_paiement, p.statut, p.date_paiement,
             p.montant_surplus, p.surplus_rembourse,

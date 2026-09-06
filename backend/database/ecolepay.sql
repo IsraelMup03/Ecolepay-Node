@@ -96,11 +96,45 @@ CREATE TABLE IF NOT EXISTS `classes` (
   `ordre` int(11) DEFAULT 0,
   `annee_scolaire` varchar(20) DEFAULT NULL,
   `actif` tinyint(1) DEFAULT 1,
+  `est_pivot` tinyint(1) DEFAULT 0 COMMENT 'Classe apres laquelle les eleves se separent vers plusieurs classes differentes au choix (ex: 8eme -> options d humanites) : la promotion automatique ne peut pas choisir a leur place, chaque eleve doit etre transfere individuellement',
   `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `niveau_id` (`niveau_id`),
   KEY `classe_superieure_id` (`classe_superieure_id`),
   CONSTRAINT `fk_classe_niveau` FOREIGN KEY (`niveau_id`) REFERENCES `niveaux` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: sections (ex: "1ere Secondaire A/B/C") -- rattachees a une classe, ne
+-- remplacent jamais une classe : eleves.classe_id continue de toujours pointer vers
+-- une vraie classe, jamais vers une section. `nom` ne stocke que la lettre ("A"), le
+-- nom complet affiche est toujours compose de classe.nom + ' ' + section.nom.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `sections` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `classe_id` int(11) NOT NULL,
+  `nom` varchar(50) NOT NULL,
+  `ordre` int(11) DEFAULT 0,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `classe_id` (`classe_id`),
+  CONSTRAINT `fk_section_classe` FOREIGN KEY (`classe_id`) REFERENCES `classes` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: classe_tranches (ex: 400$/200$/150$ pour une classe) -- classes.frais_scolarite
+-- reste la somme de ces tranches et continue d'etre ce que tout le reste du logiciel lit ;
+-- une classe qui n'utilise pas les tranches n'a simplement aucune ligne ici.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `classe_tranches` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `classe_id` int(11) NOT NULL,
+  `numero` int(11) NOT NULL,
+  `montant` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `classe_id` (`classe_id`),
+  CONSTRAINT `fk_tranche_classe` FOREIGN KEY (`classe_id`) REFERENCES `classes` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -117,6 +151,7 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   `lieu_naissance` varchar(150) DEFAULT NULL,
   `nationalite` varchar(100) DEFAULT 'Congolaise',
   `classe_id` int(11) NOT NULL,
+  `section_id` int(11) DEFAULT NULL COMMENT 'Section (A/B/C) de la classe, assignee au premier paiement scolarite/inscription de l annee ou choisie directement a l inscription',
   `photo` varchar(255) DEFAULT NULL,
   `nom_parent` varchar(200) DEFAULT NULL,
   `telephone_parent` varchar(50) DEFAULT NULL,
@@ -126,8 +161,10 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   `redoublant` tinyint(1) DEFAULT 0 COMMENT 'Redouble sa classe actuelle cette annee (reste actif, redemarre a 0 a la prochaine promotion)',
   `date_inscription` date DEFAULT NULL,
   `annee_scolaire` varchar(20) DEFAULT NULL,
-  `frais_scolarite_total` decimal(15,2) DEFAULT 0.00 COMMENT 'Copie depuis la classe a l inscription',
+  `frais_scolarite_total` decimal(15,2) DEFAULT 0.00 COMMENT 'Copie depuis la classe a l inscription, apres application de remise_pourcentage',
   `frais_inscription_total` decimal(15,2) DEFAULT 0.00,
+  `remise_pourcentage` decimal(5,2) DEFAULT 0.00 COMMENT 'Remise appliquee sur la scolarite de cet eleve (0 a 100)',
+  `en_attente_orientation` tinyint(1) DEFAULT 0 COMMENT 'Eleve d une classe pivot deja present avant la derniere promotion, en attente d un transfert manuel vers la classe choisie (distingue ce groupe de ceux qui viennent d y etre promus normalement)',
   `notes` text DEFAULT NULL,
   `created_by` int(11) DEFAULT NULL,
   `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -135,9 +172,11 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `matricule` (`matricule`),
   KEY `classe_id` (`classe_id`),
+  KEY `section_id` (`section_id`),
   KEY `idx_eleves_statut_annee` (`statut`,`annee_scolaire`),
   KEY `idx_eleves_classe_statut` (`classe_id`,`statut`),
-  CONSTRAINT `fk_eleve_classe` FOREIGN KEY (`classe_id`) REFERENCES `classes` (`id`)
+  CONSTRAINT `fk_eleve_classe` FOREIGN KEY (`classe_id`) REFERENCES `classes` (`id`),
+  CONSTRAINT `fk_eleve_section` FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -245,6 +284,7 @@ SELECT * FROM (
   UNION ALL SELECT 'compteur_matricule', '1', 'Compteur pour les matricules'
   UNION ALL SELECT 'taux_usd_cdf', '2800', 'Taux de change USD vers CDF'
   UNION ALL SELECT 'rappel_paiement', '1', 'Activer les rappels de paiement'
+  UNION ALL SELECT 'nombre_tranches_scolarite', '1', 'Nombre de tranches de scolarite par annee (1 = montant unique)'
 ) AS tmp
 WHERE NOT EXISTS (SELECT 1 FROM `parametres` WHERE `cle` = tmp.a);
 
@@ -289,4 +329,30 @@ CREATE TABLE IF NOT EXISTS `depenses` (
   KEY `idx_depenses_date` (`date_depense`),
   KEY `idx_depenses_annee_categorie` (`annee_scolaire`,`categorie`),
   CONSTRAINT `fk_depense_comptable` FOREIGN KEY (`comptable_id`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: recettes_diverses (entrees de caisse hors paiements d'eleves : subventions, dons, etc.)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `recettes_diverses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `reference` varchar(50) NOT NULL,
+  `categorie` varchar(50) NOT NULL DEFAULT 'autre',
+  `montant` decimal(15,2) NOT NULL,
+  `devise` varchar(10) DEFAULT 'USD',
+  `montant_usd` decimal(15,4) DEFAULT 0.0000,
+  `montant_local` decimal(15,2) DEFAULT 0.00,
+  `taux_change` decimal(15,4) DEFAULT 1.0000,
+  `mode_paiement` enum('especes','mobile_money','virement','cheque') DEFAULT 'especes',
+  `provenance` varchar(200) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `date_recette` datetime DEFAULT CURRENT_TIMESTAMP,
+  `comptable_id` int(11) DEFAULT NULL,
+  `annee_scolaire` varchar(20) DEFAULT NULL,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `reference` (`reference`),
+  KEY `idx_recettes_diverses_date` (`date_recette`),
+  KEY `idx_recettes_diverses_annee_categorie` (`annee_scolaire`,`categorie`),
+  CONSTRAINT `fk_recette_comptable` FOREIGN KEY (`comptable_id`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

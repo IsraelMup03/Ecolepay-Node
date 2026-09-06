@@ -114,6 +114,7 @@ export default function Parametres() {
           <div className="card-body">
             <div className="info-grid">
               <div className="info-item"><div className="label">Taux de change USD → CDF</div><div className="value">{params.taux_usd_cdf || <span className="muted">—</span>}</div></div>
+              <div className="info-item"><div className="label">Tranches de scolarité</div><div className="value">{Number(params.nombre_tranches_scolarite) > 1 ? `${params.nombre_tranches_scolarite} tranches` : 'Montant unique'}</div></div>
               <div className="info-item"><div className="label">Délai conservation corbeille</div><div className="value">{params.delai_corbeille ? `${params.delai_corbeille} jours` : <span className="muted">—</span>}</div></div>
               <div className="info-item" style={{ gridColumn: '1 / -1' }}><div className="label">Format des matricules</div><div className="value">{params.format_matricule || <span className="muted">—</span>}</div></div>
             </div>
@@ -179,6 +180,11 @@ export default function Parametres() {
                 <div className="form-group">
                   <label>Taux de change USD → CDF</label>
                   <input type="number" step="0.01" value={paramsForm.taux_usd_cdf || ''} onChange={(e) => setParamsForm({ ...paramsForm, taux_usd_cdf: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Nombre de tranches de scolarité</label>
+                  <input type="number" min="1" max="10" value={paramsForm.nombre_tranches_scolarite || ''} onChange={(e) => setParamsForm({ ...paramsForm, nombre_tranches_scolarite: e.target.value })} />
+                  <small>1 = montant unique (comportement actuel). Une nouvelle classe créée après ce réglage proposera ce nombre de tranches ; les classes déjà créées gardent leur propre découpage.</small>
                 </div>
                 <div className="form-group">
                   <label>Délai de conservation corbeille (jours)</label>

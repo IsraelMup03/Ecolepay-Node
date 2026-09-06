@@ -13,6 +13,11 @@ const CATEGORIES = {
   transport: 'Transport', communication: 'Communication', evenements: 'Événements scolaires',
   impots: 'Impôts / Taxes', autre: 'Autre',
 };
+// Recettes qui n'arrivent pas via un paiement d'eleve (subventions, dons...).
+const CATEGORIES_RECETTES = {
+  subvention: 'Subvention', don: 'Don', vente: 'Vente de biens/services',
+  location: 'Location de salle/matériel', autre: 'Autre',
+};
 const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
 
 function genererReferenceDepense() {
@@ -22,8 +27,18 @@ function genererReferenceDepense() {
   return `DEP-${y}${m}${day}-${rand}`;
 }
 
+function genererReferenceRecette() {
+  const d = new Date();
+  const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0');
+  const rand = Math.random().toString(36).slice(-6).toUpperCase();
+  return `REC-${y}${m}${day}-${rand}`;
+}
+
 // GET /api/comptabilite/categories
 router.get('/categories', (req, res) => res.json(CATEGORIES));
+
+// GET /api/comptabilite/categories-recettes
+router.get('/categories-recettes', (req, res) => res.json(CATEGORIES_RECETTES));
 
 // GET /api/comptabilite/resume?annee=&debut=&fin=  (recettes vs depenses, pour les graphiques)
 router.get('/resume', async (req, res) => {
@@ -36,27 +51,49 @@ router.get('/resume', async (req, res) => {
   const paramsRecettes = [anneeCible];
   const whereDepenses = ['d.annee_scolaire=?'];
   const paramsDepenses = [anneeCible];
+  const whereRecettesDiverses = ['r.annee_scolaire=?'];
+  const paramsRecettesDiverses = [anneeCible];
   if (!modeHistorique) {
-    if (debut) { whereRecettes.push('DATE(p.date_paiement)>=?'); paramsRecettes.push(debut); whereDepenses.push('DATE(d.date_depense)>=?'); paramsDepenses.push(debut); }
-    if (fin) { whereRecettes.push('DATE(p.date_paiement)<=?'); paramsRecettes.push(fin); whereDepenses.push('DATE(d.date_depense)<=?'); paramsDepenses.push(fin); }
+    if (debut) {
+      whereRecettes.push('DATE(p.date_paiement)>=?'); paramsRecettes.push(debut);
+      whereDepenses.push('DATE(d.date_depense)>=?'); paramsDepenses.push(debut);
+      whereRecettesDiverses.push('DATE(r.date_recette)>=?'); paramsRecettesDiverses.push(debut);
+    }
+    if (fin) {
+      whereRecettes.push('DATE(p.date_paiement)<=?'); paramsRecettes.push(fin);
+      whereDepenses.push('DATE(d.date_depense)<=?'); paramsDepenses.push(fin);
+      whereRecettesDiverses.push('DATE(r.date_recette)<=?'); paramsRecettesDiverses.push(fin);
+    }
   }
 
+  // montant_usd + montant_surplus : les recettes doivent refleter l'argent reellement recu
+  // en caisse, surplus (pas encore rendu) compris -- voir le meme choix dans dashboard.js.
   const [[recettesTotal]] = await db.query(
-    `SELECT COALESCE(SUM(p.montant_usd),0) as total, COUNT(*) as nb FROM paiements p WHERE ${whereRecettes.join(' AND ')}`,
+    `SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as total, COUNT(*) as nb FROM paiements p WHERE ${whereRecettes.join(' AND ')}`,
     paramsRecettes
   );
   const [[depensesTotal]] = await db.query(
     `SELECT COALESCE(SUM(d.montant_usd),0) as total, COUNT(*) as nb FROM depenses d WHERE ${whereDepenses.join(' AND ')}`,
     paramsDepenses
   );
+  // Recettes diverses (hors paiements d'eleves) : doivent s'ajouter au total des recettes
+  // partout ou celui-ci est affiche, sinon une entree manuelle serait invisible ici.
+  const [[recettesDiversesTotal]] = await db.query(
+    `SELECT COALESCE(SUM(r.montant_usd),0) as total, COUNT(*) as nb FROM recettes_diverses r WHERE ${whereRecettesDiverses.join(' AND ')}`,
+    paramsRecettesDiverses
+  );
 
   const [depensesParCategorie] = await db.query(
     `SELECT d.categorie, COUNT(*) as nb, SUM(d.montant_usd) as total FROM depenses d WHERE ${whereDepenses.join(' AND ')} GROUP BY d.categorie ORDER BY total DESC`,
     paramsDepenses
   );
+  const [recettesDiversesParCategorie] = await db.query(
+    `SELECT r.categorie, COUNT(*) as nb, SUM(r.montant_usd) as total FROM recettes_diverses r WHERE ${whereRecettesDiverses.join(' AND ')} GROUP BY r.categorie ORDER BY total DESC`,
+    paramsRecettesDiverses
+  );
 
   const [recettesParMois] = await db.query(
-    `SELECT DATE_FORMAT(p.date_paiement,'%Y-%m') as mk, DATE_FORMAT(p.date_paiement,'%b %Y') as lbl, SUM(p.montant_usd) as total
+    `SELECT DATE_FORMAT(p.date_paiement,'%Y-%m') as mk, DATE_FORMAT(p.date_paiement,'%b %Y') as lbl, SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)) as total
      FROM paiements p WHERE ${whereRecettes.join(' AND ')} GROUP BY DATE_FORMAT(p.date_paiement,'%Y-%m') ORDER BY mk ASC`,
     paramsRecettes
   );
@@ -65,9 +102,20 @@ router.get('/resume', async (req, res) => {
      FROM depenses d WHERE ${whereDepenses.join(' AND ')} GROUP BY DATE_FORMAT(d.date_depense,'%Y-%m') ORDER BY mk ASC`,
     paramsDepenses
   );
-  // Fusionne recettes/depenses sur les memes mois pour le graphique combine
+  const [recettesDiversesParMois] = await db.query(
+    `SELECT DATE_FORMAT(r.date_recette,'%Y-%m') as mk, DATE_FORMAT(r.date_recette,'%b %Y') as lbl, SUM(r.montant_usd) as total
+     FROM recettes_diverses r WHERE ${whereRecettesDiverses.join(' AND ')} GROUP BY DATE_FORMAT(r.date_recette,'%Y-%m') ORDER BY mk ASC`,
+    paramsRecettesDiverses
+  );
+  // Fusionne recettes (paiements + recettes diverses) / depenses sur les memes mois pour le
+  // graphique combine. Important : "+=" et jamais "=" sur .recettes, sinon la 2e source
+  // ecraserait le total paiements d'un mois qui a aussi une recette diverse ce mois-la.
   const moisMap = new Map();
   recettesParMois.forEach((r) => moisMap.set(r.mk, { mk: r.mk, lbl: r.lbl, recettes: parseFloat(r.total) || 0, depenses: 0 }));
+  recettesDiversesParMois.forEach((r) => {
+    if (!moisMap.has(r.mk)) moisMap.set(r.mk, { mk: r.mk, lbl: r.lbl, recettes: 0, depenses: 0 });
+    moisMap.get(r.mk).recettes += parseFloat(r.total) || 0;
+  });
   depensesParMois.forEach((d) => {
     if (!moisMap.has(d.mk)) moisMap.set(d.mk, { mk: d.mk, lbl: d.lbl, recettes: 0, depenses: 0 });
     moisMap.get(d.mk).depenses = parseFloat(d.total) || 0;
@@ -77,14 +125,16 @@ router.get('/resume', async (req, res) => {
   res.json({
     annee: anneeCible,
     modeHistorique,
-    totalRecettes: parseFloat(recettesTotal.total) || 0,
-    nbRecettes: recettesTotal.nb,
+    totalRecettes: (parseFloat(recettesTotal.total) || 0) + (parseFloat(recettesDiversesTotal.total) || 0),
+    nbRecettes: recettesTotal.nb + recettesDiversesTotal.nb,
     totalDepenses: parseFloat(depensesTotal.total) || 0,
     nbDepenses: depensesTotal.nb,
-    solde: (parseFloat(recettesTotal.total) || 0) - (parseFloat(depensesTotal.total) || 0),
+    solde: (parseFloat(recettesTotal.total) || 0) + (parseFloat(recettesDiversesTotal.total) || 0) - (parseFloat(depensesTotal.total) || 0),
     depensesParCategorie: depensesParCategorie.map((c) => ({ categorie: CATEGORIES[c.categorie] || c.categorie, nb: c.nb, total: parseFloat(c.total) || 0 })),
+    recettesDiversesParCategorie: recettesDiversesParCategorie.map((c) => ({ categorie: CATEGORIES_RECETTES[c.categorie] || c.categorie, nb: c.nb, total: parseFloat(c.total) || 0 })),
     evolution,
     categories: CATEGORIES,
+    categoriesRecettes: CATEGORIES_RECETTES,
   });
 });
 
@@ -231,6 +281,149 @@ router.get('/depenses/export.xlsx', async (req, res) => {
   }
 });
 
+// GET /api/comptabilite/recettes-diverses?page=&categorie=&annee=&debut=&fin=&q=
+router.get('/recettes-diverses', async (req, res) => {
+  const { categorie, annee, debut, fin, q } = req.query;
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const perPage = 25;
+  const offset = (page - 1) * perPage;
+  const anneeCourante = await getParam('annee_scolaire_courante');
+  const anneeCible = annee || anneeCourante;
+
+  const where = ['r.annee_scolaire=?'];
+  const params = [anneeCible];
+  if (categorie) { where.push('r.categorie=?'); params.push(categorie); }
+  if (debut) { where.push('DATE(r.date_recette)>=?'); params.push(debut); }
+  if (fin) { where.push('DATE(r.date_recette)<=?'); params.push(fin); }
+  if (q) { where.push('(r.provenance LIKE ? OR r.description LIKE ? OR r.reference LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  const whereStr = `WHERE ${where.join(' AND ')}`;
+
+  const [[{ total }]] = await db.query(`SELECT COUNT(*) as total FROM recettes_diverses r ${whereStr}`, params);
+  const [[{ somme }]] = await db.query(`SELECT COALESCE(SUM(r.montant_usd),0) as somme FROM recettes_diverses r ${whereStr}`, params);
+  const [rows] = await db.query(
+    `SELECT r.*, u.prenom as cpt_prenom, u.nom as cpt_nom FROM recettes_diverses r LEFT JOIN utilisateurs u ON u.id=r.comptable_id
+     ${whereStr} ORDER BY r.date_recette DESC LIMIT ${perPage} OFFSET ${offset}`,
+    params
+  );
+  res.json({ recettes: rows, total, somme: parseFloat(somme) || 0, page, totalPages: Math.max(1, Math.ceil(total / perPage)) });
+});
+
+// POST /api/comptabilite/recettes-diverses  (nouvelle entree)
+router.post('/recettes-diverses', async (req, res) => {
+  const { categorie = 'autre', montant, devise, provenance, description, mode_paiement = 'especes' } = req.body;
+  const montantSaisi = parseFloat(montant);
+  if (!(montantSaisi > 0)) return res.status(400).json({ error: 'Veuillez saisir un montant valide.' });
+  if (!CATEGORIES_RECETTES[categorie]) return res.status(400).json({ error: 'Catégorie invalide.' });
+
+  const ecole = await getEcole();
+  const deviseSaisie = devise || ecole?.devise || 'USD';
+  const taux = parseFloat(await getParam('taux_usd_cdf', '2800'));
+  const annee = await getParam('annee_scolaire_courante');
+
+  let montantUSD, montantCDF;
+  if (deviseSaisie === 'CDF') { montantUSD = taux > 0 ? montantSaisi / taux : montantSaisi; montantCDF = montantSaisi; }
+  else { montantUSD = montantSaisi; montantCDF = montantSaisi * taux; }
+
+  const reference = genererReferenceRecette();
+  const [result] = await db.query(
+    `INSERT INTO recettes_diverses (reference, categorie, montant, devise, montant_usd, montant_local, taux_change, mode_paiement, provenance, description, comptable_id, annee_scolaire, date_recette)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+    [reference, categorie, montantSaisi, deviseSaisie, montantUSD, montantCDF, taux, mode_paiement, provenance || null, description || null, req.user.id, annee]
+  );
+  await logActivite(req.user.id, 'Recette diverse enregistree', `Ref:${reference} Categorie:${categorie} Montant:${montantSaisi} ${deviseSaisie}`, req.ip);
+  res.status(201).json({ id: result.insertId, reference });
+});
+
+// PUT /api/comptabilite/recettes-diverses/:id
+router.put('/recettes-diverses/:id', async (req, res) => {
+  const { id } = req.params;
+  const { categorie, montant, devise, provenance, description, mode_paiement } = req.body;
+  const [[existante]] = await db.query('SELECT * FROM recettes_diverses WHERE id=?', [id]);
+  if (!existante) return res.status(404).json({ error: 'Recette introuvable.' });
+  if (categorie && !CATEGORIES_RECETTES[categorie]) return res.status(400).json({ error: 'Catégorie invalide.' });
+
+  const montantSaisi = montant !== undefined ? parseFloat(montant) : parseFloat(existante.montant);
+  if (!(montantSaisi > 0)) return res.status(400).json({ error: 'Veuillez saisir un montant valide.' });
+  const deviseSaisie = devise || existante.devise;
+  const taux = parseFloat(existante.taux_change) || parseFloat(await getParam('taux_usd_cdf', '2800'));
+  let montantUSD, montantCDF;
+  if (deviseSaisie === 'CDF') { montantUSD = taux > 0 ? montantSaisi / taux : montantSaisi; montantCDF = montantSaisi; }
+  else { montantUSD = montantSaisi; montantCDF = montantSaisi * taux; }
+
+  await db.query(
+    `UPDATE recettes_diverses SET categorie=?, montant=?, devise=?, montant_usd=?, montant_local=?, mode_paiement=?, provenance=?, description=? WHERE id=?`,
+    [categorie || existante.categorie, montantSaisi, deviseSaisie, montantUSD, montantCDF, mode_paiement || existante.mode_paiement, provenance ?? existante.provenance, description ?? existante.description, id]
+  );
+  await logActivite(req.user.id, 'Recette diverse modifiee', `ID:${id}`, req.ip);
+  const [[updated]] = await db.query('SELECT * FROM recettes_diverses WHERE id=?', [id]);
+  res.json(updated);
+});
+
+// DELETE /api/comptabilite/recettes-diverses/:id  (archivage -> corbeille, coherent avec le reste du logiciel)
+router.delete('/recettes-diverses/:id', async (req, res) => {
+  const { id } = req.params;
+  const [[data]] = await db.query('SELECT * FROM recettes_diverses WHERE id=?', [id]);
+  if (!data) return res.status(404).json({ error: 'Recette introuvable.' });
+  await envoyerCorbeille('recettes_diverses', data, req.user.id);
+  await db.query('DELETE FROM recettes_diverses WHERE id=?', [id]);
+  await logActivite(req.user.id, 'Recette diverse supprimee', `ID:${id}`, req.ip);
+  res.json({ success: true });
+});
+
+// GET /api/comptabilite/recettes-diverses/export.xlsx
+router.get('/recettes-diverses/export.xlsx', async (req, res) => {
+  try {
+    const { categorie, annee, debut, fin, q, devise: deviseQ } = req.query;
+    const anneeCourante = await getParam('annee_scolaire_courante');
+    const anneeCible = annee || anneeCourante;
+    const where = ['r.annee_scolaire=?'];
+    const params = [anneeCible];
+    if (categorie) { where.push('r.categorie=?'); params.push(categorie); }
+    if (debut) { where.push('DATE(r.date_recette)>=?'); params.push(debut); }
+    if (fin) { where.push('DATE(r.date_recette)<=?'); params.push(fin); }
+    if (q) { where.push('(r.provenance LIKE ? OR r.description LIKE ? OR r.reference LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    const whereStr = `WHERE ${where.join(' AND ')}`;
+
+    const [rows] = await db.query(
+      `SELECT r.*, u.prenom as cpt_prenom, u.nom as cpt_nom FROM recettes_diverses r LEFT JOIN utilisateurs u ON u.id=r.comptable_id
+       ${whereStr} ORDER BY r.date_recette DESC`,
+      params
+    );
+
+    const ecole = await getEcole();
+    const devise = deviseQ === 'CDF' || (deviseQ && deviseQ !== 'USD') ? deviseQ : 'USD';
+    const taux = parseFloat(await getParam('taux_usd_cdf', '1')) || 1;
+    const workbook = newWorkbook();
+    const sheet = workbook.addWorksheet('Recettes diverses', { views: [{ state: 'frozen', ySplit: 8 }] });
+    const columns = [
+      { header: 'Référence', key: 'reference', width: 22, type: 'text' },
+      { header: 'Catégorie', key: 'categorie', width: 22, type: 'text' },
+      { header: 'Provenance', key: 'provenance', width: 22, type: 'text' },
+      { header: 'Description', key: 'description', width: 28, type: 'text' },
+      { header: 'Mode', key: 'mode', width: 16, type: 'text' },
+      { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Date', key: 'date', width: 18, type: 'text' },
+      { header: 'Enregistré par', key: 'comptable', width: 20, type: 'text' },
+    ];
+    const nextRow = addLetterhead(sheet, {
+      ecole, title: `Recettes diverses — Année ${anneeCible}`, subtitle: `${rows.length} recette(s)`,
+      generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
+      numCols: columns.length,
+    });
+    addTable(sheet, nextRow, columns, rows.map((r) => ({
+      reference: r.reference, categorie: CATEGORIES_RECETTES[r.categorie] || r.categorie, provenance: r.provenance || '—',
+      description: r.description || '—', mode: MODE_LABELS[r.mode_paiement] || r.mode_paiement,
+      montant: parseFloat(r.montant_usd) || 0, date: new Date(r.date_recette).toLocaleString('fr-FR'),
+      comptable: r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—',
+    })), { showTotals: true, devise, taux });
+
+    await sendWorkbook(res, workbook, `recettes_diverses_${anneeCible}_${Date.now()}.xlsx`);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la generation du rapport.' });
+  }
+});
+
 // GET /api/comptabilite/rapport.xlsx?type=jour|semaine|mois&date=  (recettes + depenses combinees)
 router.get('/rapport.xlsx', async (req, res) => {
   try {
@@ -265,8 +458,15 @@ router.get('/rapport.xlsx', async (req, res) => {
        WHERE d.annee_scolaire=? AND d.date_depense BETWEEN ? AND ?`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
+    const [recettesDiverses] = await db.query(
+      `SELECT r.montant_usd, r.categorie, r.reference, r.provenance, r.description, r.date_recette, u.prenom as cpt_prenom, u.nom as cpt_nom
+       FROM recettes_diverses r LEFT JOIN utilisateurs u ON u.id=r.comptable_id
+       WHERE r.annee_scolaire=? AND r.date_recette BETWEEN ? AND ?`,
+      [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
+    );
 
-    const totalRecettes = recettes.reduce((s, r) => s + (parseFloat(r.montant_usd) || 0), 0);
+    const totalRecettes = recettes.reduce((s, r) => s + (parseFloat(r.montant_usd) || 0), 0)
+      + recettesDiverses.reduce((s, r) => s + (parseFloat(r.montant_usd) || 0), 0);
     const totalDepenses = depenses.reduce((s, d) => s + (parseFloat(d.montant_usd) || 0), 0);
     const ecole = await getEcole();
     const { devise: deviseQ } = req.query;
@@ -306,6 +506,25 @@ router.get('/rapport.xlsx', async (req, res) => {
       description: d.description || '—', montant: parseFloat(d.montant_usd) || 0,
       date: new Date(d.date_depense).toLocaleString('fr-FR'), comptable: d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—',
     })), { showTotals: true, devise, taux });
+
+    if (recettesDiverses.length > 0) {
+      const detailRecettes = workbook.addWorksheet('Détail des recettes diverses', { views: [{ state: 'frozen', ySplit: 8 }] });
+      const detailRecettesCols = [
+        { header: 'Référence', key: 'reference', width: 22, type: 'text' },
+        { header: 'Catégorie', key: 'categorie', width: 22, type: 'text' },
+        { header: 'Provenance', key: 'provenance', width: 22, type: 'text' },
+        { header: 'Description', key: 'description', width: 28, type: 'text' },
+        { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+        { header: 'Date', key: 'date', width: 18, type: 'text' },
+        { header: 'Enregistré par', key: 'comptable', width: 20, type: 'text' },
+      ];
+      const rRecettes = addLetterhead(detailRecettes, { ecole, title: `${labelType} — Détail des recettes diverses`, subtitle: periodeLabel, generatedBy, numCols: detailRecettesCols.length });
+      addTable(detailRecettes, rRecettes, detailRecettesCols, recettesDiverses.map((r) => ({
+        reference: r.reference, categorie: CATEGORIES_RECETTES[r.categorie] || r.categorie, provenance: r.provenance || '—',
+        description: r.description || '—', montant: parseFloat(r.montant_usd) || 0,
+        date: new Date(r.date_recette).toLocaleString('fr-FR'), comptable: r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—',
+      })), { showTotals: true, devise, taux });
+    }
 
     await sendWorkbook(res, workbook, `comptabilite_${type}_${sqlFmt(debut).slice(0, 10)}.xlsx`);
   } catch (e) {

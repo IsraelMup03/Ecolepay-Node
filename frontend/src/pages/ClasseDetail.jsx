@@ -9,6 +9,10 @@ export default function ClasseDetail() {
   const { format, devise } = useDevise();
   const [classe, setClasse] = useState(null);
   const [stats, setStats] = useState(null);
+  const [sections, setSections] = useState([]);
+  const [elevesSansSection, setElevesSansSection] = useState(0);
+  const [nouvelleSection, setNouvelleSection] = useState('');
+  const [sectionError, setSectionError] = useState('');
   const [eleves, setEleves] = useState([]);
   const [eleveSearch, setEleveSearch] = useState('');
   const [eleveSort, setEleveSort] = useState({ field: 'nom', order: 'asc' });
@@ -27,6 +31,8 @@ export default function ClasseDetail() {
       ]);
       setClasse(classeRes.data.classe);
       setStats(classeRes.data.stats);
+      setSections(classeRes.data.sections || []);
+      setElevesSansSection(classeRes.data.elevesSansSection || 0);
       setEleves(elevesRes.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur lors du chargement de la classe.');
@@ -34,6 +40,29 @@ export default function ClasseDetail() {
       setEleves([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function ajouterSection(e) {
+    e.preventDefault();
+    setSectionError('');
+    if (!nouvelleSection.trim()) return;
+    try {
+      await client.post(`/classes/${id}/sections`, { nom: nouvelleSection.trim() });
+      setNouvelleSection('');
+      loadClasse();
+    } catch (err) {
+      setSectionError(err.response?.data?.error || 'Erreur.');
+    }
+  }
+
+  async function supprimerSection(section) {
+    if (!window.confirm(`Supprimer la section "${classe?.nom} ${section.nom}" ?`)) return;
+    try {
+      await client.delete(`/classes/sections/${section.id}`);
+      loadClasse();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur.');
     }
   }
 
@@ -80,6 +109,55 @@ export default function ClasseDetail() {
       const vb = (b[field] || '').toString().toLowerCase();
       return va.localeCompare(vb) * order;
     });
+
+  // Classe pivot : les eleves fraichement promus depuis la classe inferieure (normaux, pas
+  // encore concernes par un transfert) ne doivent jamais etre meles a ceux qui etaient deja
+  // presents avant la derniere promotion et sont maintenant en retard de transfert manuel.
+  const estPivot = !!classe?.est_pivot;
+  const elevesEnAttente = estPivot ? filteredEleves.filter((e) => !!e.en_attente_orientation) : [];
+  const elevesDeCetteAnnee = estPivot ? filteredEleves.filter((e) => !e.en_attente_orientation) : filteredEleves;
+
+  function tableEleves(liste, emptyLabel) {
+    return (
+      <div className="table-container" style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
+        <table>
+          <thead>
+            <tr>
+              <th onClick={() => sortEleves('matricule')} style={{ cursor: 'pointer' }}>Matricule</th>
+              <th onClick={() => sortEleves('nom')} style={{ cursor: 'pointer' }}>Nom</th>
+              <th onClick={() => sortEleves('prenom')} style={{ cursor: 'pointer' }}>Prénom</th>
+              <th>Section</th>
+              <th onClick={() => sortEleves('total_paye')} style={{ cursor: 'pointer' }}>Total payé</th>
+              <th onClick={() => sortEleves('reste')} style={{ cursor: 'pointer' }}>Reste</th>
+              <th onClick={() => sortEleves('dernier_paiement_date')} style={{ cursor: 'pointer' }}>Date paiement</th>
+              <th>Perçu par</th>
+              {estPivot && <th></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {liste.length === 0 && (
+              <tr><td colSpan={estPivot ? 9 : 8} className="text-center text-muted">{emptyLabel}</td></tr>
+            )}
+            {liste.map((e) => (
+              <tr key={e.id}>
+                <td>{e.matricule}</td>
+                <td>{e.nom} {!!e.redoublant && <span className="badge badge-warning" style={{ marginLeft: 6 }}>Redoublant</span>}</td>
+                <td>{e.prenom}</td>
+                <td>{e.section_nom || '—'}</td>
+                <td>{format(e.total_paye)}</td>
+                <td>{format(Math.max(0, (e.frais_scolarite_total || 0) - (e.total_paye || 0)))}</td>
+                <td>{e.dernier_paiement_date || '—'}</td>
+                <td>{e.perce_par || '—'}</td>
+                {estPivot && (
+                  <td><button className="btn btn-link btn-sm" onClick={() => navigate(`/eleves/${e.id}`)}>Ouvrir la fiche →</button></td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -130,51 +208,77 @@ export default function ClasseDetail() {
             <div className="stat-card"><div className="stat-info"><div className="label">Reste</div><div className="value">{format((stats?.total_attendu || 0) - (stats?.total_paye || 0))}</div></div></div>
           </div>
         </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header"><h3>Liste des élèves</h3></div>
-        <div className="card-body">
-          <div className="flex-between mb-8" style={{ flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <label style={{ margin: 0 }}>Recherche</label>
-              <input type="search" value={eleveSearch} onChange={(e) => setEleveSearch(e.target.value)} placeholder="Matricule, Nom, Prénom, Perçu par..." style={{ minWidth: 240 }} />
-            </div>
-            <div className="text-muted">{filteredEleves.length} résultat(s)</div>
-          </div>
-          <div className="table-container" style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th onClick={() => sortEleves('matricule')} style={{ cursor: 'pointer' }}>Matricule</th>
-                  <th onClick={() => sortEleves('nom')} style={{ cursor: 'pointer' }}>Nom</th>
-                  <th onClick={() => sortEleves('prenom')} style={{ cursor: 'pointer' }}>Prénom</th>
-                  <th onClick={() => sortEleves('total_paye')} style={{ cursor: 'pointer' }}>Total payé</th>
-                  <th onClick={() => sortEleves('reste')} style={{ cursor: 'pointer' }}>Reste</th>
-                  <th onClick={() => sortEleves('dernier_paiement_date')} style={{ cursor: 'pointer' }}>Date paiement</th>
-                  <th>Perçu par</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEleves.length === 0 && (
-                  <tr><td colSpan={7} className="text-center text-muted">Aucun élève actif trouvé pour cette classe.</td></tr>
-                )}
-                {filteredEleves.map((e) => (
-                  <tr key={e.id}>
-                    <td>{e.matricule}</td>
-                    <td>{e.nom} {!!e.redoublant && <span className="badge badge-warning" style={{ marginLeft: 6 }}>Redoublant</span>}</td>
-                    <td>{e.prenom}</td>
-                    <td>{format(e.total_paye)}</td>
-                    <td>{format(Math.max(0, (e.frais_scolarite_total || 0) - (e.total_paye || 0)))}</td>
-                    <td>{e.dernier_paiement_date || '—'}</td>
-                    <td>{e.perce_par || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="card">
+          <div className="card-header"><h3>Sections</h3></div>
+          <div className="card-body">
+            {sectionError && <div className="alert alert-danger">{sectionError}</div>}
+            {sections.length === 0 && <div className="text-muted mb-8">Aucune section — tous les élèves sont directement dans "{classe?.nom}".</div>}
+            {sections.length > 0 && (
+              <table className="mb-8">
+                <tbody>
+                  {sections.map((s) => (
+                    <tr key={s.id}>
+                      <td>{classe?.nom} {s.nom}</td>
+                      <td className="text-muted">{s.nb_eleves} élève(s)</td>
+                      <td><button className="btn btn-link btn-sm danger" onClick={() => supprimerSection(s)}><i className="ph ph-trash"></i></button></td>
+                    </tr>
+                  ))}
+                  {elevesSansSection > 0 && (
+                    <tr><td colSpan={2} className="text-muted">Sans section assignée</td><td>{elevesSansSection}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+            <form className="flex gap-8" onSubmit={ajouterSection}>
+              <input placeholder="Ex: A, B, C..." value={nouvelleSection} onChange={(e) => setNouvelleSection(e.target.value)} style={{ flex: 1 }} />
+              <button type="submit" className="btn btn-outline btn-sm">Ajouter</button>
+            </form>
           </div>
         </div>
       </div>
+
+      {estPivot ? (
+        <>
+          <div className="card mb-16">
+            <div className="card-header">
+              <h3><i className="ph ph-git-fork"></i> En attente de transfert <span className="badge badge-warning" style={{ marginLeft: 8 }}>{elevesEnAttente.length}</span></h3>
+            </div>
+            <div className="card-body">
+              <div className="alert alert-warning mb-8">
+                Ces élèves étaient déjà dans "{classe?.nom}" avant la dernière promotion : ils doivent être transférés individuellement vers la classe qu'ils ont choisie (ouvrir leur fiche → bouton "Transférer").
+              </div>
+              {tableEleves(elevesEnAttente, 'Aucun élève en attente de transfert.')}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-header"><h3>Élèves de cette année</h3></div>
+            <div className="card-body">
+              <div className="flex-between mb-8" style={{ flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <label style={{ margin: 0 }}>Recherche</label>
+                  <input type="search" value={eleveSearch} onChange={(e) => setEleveSearch(e.target.value)} placeholder="Matricule, Nom, Prénom, Perçu par..." style={{ minWidth: 240 }} />
+                </div>
+                <div className="text-muted">{elevesDeCetteAnnee.length} résultat(s)</div>
+              </div>
+              {tableEleves(elevesDeCetteAnnee, 'Aucun élève actif trouvé pour cette classe.')}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="card">
+          <div className="card-header"><h3>Liste des élèves</h3></div>
+          <div className="card-body">
+            <div className="flex-between mb-8" style={{ flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <label style={{ margin: 0 }}>Recherche</label>
+                <input type="search" value={eleveSearch} onChange={(e) => setEleveSearch(e.target.value)} placeholder="Matricule, Nom, Prénom, Perçu par..." style={{ minWidth: 240 }} />
+              </div>
+              <div className="text-muted">{filteredEleves.length} résultat(s)</div>
+            </div>
+            {tableEleves(filteredEleves, 'Aucun élève actif trouvé pour cette classe.')}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

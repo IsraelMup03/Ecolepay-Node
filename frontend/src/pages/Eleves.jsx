@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import RowMenu from '../components/RowMenu.jsx';
 
 const STATUT_PAIEMENT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
@@ -13,27 +14,46 @@ const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplôm�
 export default function Eleves() {
   const { viewingAnnee } = useAnnee();
   const { format, devise } = useDevise();
+  const { user } = useAuth();
   const [eleves, setEleves] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [q, setQ] = useState('');
   const [classeId, setClasseId] = useState('');
-  const [statut, setStatut] = useState('actif');
+  // Le bandeau de rappel (Layout.jsx) peut deep-linker ici avec ?filtre=orientation pour
+  // ouvrir directement la liste des eleves en attente de transfert inter-classe.
+  const [statut, setStatut] = useState(searchParams.get('filtre') === 'orientation' ? 'orientation' : 'actif');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
+  const [form, setForm] = useState({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', section_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
+  const [inscriptionSections, setInscriptionSections] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [transferring, setTransferring] = useState(null);
+  const [transferForm, setTransferForm] = useState({ classe_id: '', section_id: '' });
+  const [transferSections, setTransferSections] = useState([]);
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferError, setTransferError] = useState('');
+
+  // Nettoie l'URL une fois le filtre "orientation" applique, pour ne pas laisser un
+  // ?filtre=orientation perime si l'utilisateur change ensuite le select lui-meme.
+  useEffect(() => {
+    if (searchParams.get('filtre')) setSearchParams({}, { replace: true });
+    // eslint-disable-next-line
+  }, []);
 
   async function loadEleves() {
     setLoading(true);
-    // "Redoublant" n'est plus un statut a part (un redoublant reste actif) : c'est un
-    // simple filtre supplementaire sur le flag redoublant, pour que l'admin puisse les
-    // retrouver un par un et reguler la situation de chaque classe lui-meme.
-    const statutParams = statut === 'redoublant' ? { statut: 'actif', redoublant: 1 } : { statut };
+    // "Redoublant"/"En attente d'orientation" ne sont pas des statuts a part (ils restent
+    // actifs) : ce sont de simples filtres supplementaires sur un flag, pour que l'admin
+    // puisse les retrouver un par un et reguler la situation lui-meme.
+    const statutParams = statut === 'redoublant' ? { statut: 'actif', redoublant: 1 }
+      : statut === 'orientation' ? { statut: 'actif', en_attente_orientation: 1 }
+      : { statut };
     const params = viewingAnnee ? { q, classe_id: classeId, annee: viewingAnnee, page } : { q, classe_id: classeId, page, ...statutParams };
     const res = await client.get('/eleves', { params });
     setEleves(res.data.rows);
@@ -64,6 +84,24 @@ export default function Eleves() {
     }
   }
 
+  async function handleTransferSubmit(e) {
+    e.preventDefault();
+    setTransferError('');
+    setTransferSaving(true);
+    try {
+      await client.post(`/eleves/${transferring.id}/transferer`, {
+        classe_id: transferForm.classe_id,
+        section_id: transferForm.section_id || null,
+      });
+      setTransferring(null);
+      loadEleves();
+    } catch (err) {
+      setTransferError(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setTransferSaving(false);
+    }
+  }
+
   async function archiver(e) {
     if (!window.confirm(`Archiver ${e.prenom} ${e.nom} ? Il sera déplacé vers la corbeille et pourra être restauré pendant 30 jours.`)) return;
     try {
@@ -76,7 +114,8 @@ export default function Eleves() {
 
   function openNew() {
     setEditing(null);
-    setForm({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
+    setForm({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', section_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
+    setInscriptionSections([]);
     setError('');
     setShowModal(true);
   }
@@ -84,7 +123,7 @@ export default function Eleves() {
   function openEdit(e) {
     setEditing(e);
     setForm({
-      nom: e.nom || '', postnom: e.postnom || '', prenom: e.prenom || '', genre: e.genre || 'M', classe_id: e.classe_id || '',
+      nom: e.nom || '', postnom: e.postnom || '', prenom: e.prenom || '', genre: e.genre || 'M', classe_id: e.classe_id || '', section_id: '',
       date_naissance: e.date_naissance || '', lieu_naissance: e.lieu_naissance || '',
       nom_parent: e.nom_parent || '', telephone_parent: e.telephone_parent || '', email_parent: e.email_parent || '', adresse: e.adresse || '',
     });
@@ -92,7 +131,25 @@ export default function Eleves() {
     setShowModal(true);
   }
 
+  function openTransfer(e) {
+    setTransferring(e);
+    setTransferForm({ classe_id: '', section_id: '' });
+    setTransferSections([]);
+    setTransferError('');
+  }
+
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
+  // Sections de la classe choisie a l'inscription (une inscription neuve peut choisir sa
+  // section directement, contrairement a un eleve promu qui la choisit a son premier paiement).
+  useEffect(() => {
+    if (editing || !form.classe_id) { setInscriptionSections([]); return; }
+    client.get(`/classes/${form.classe_id}/sections`).then((r) => setInscriptionSections(r.data));
+    // eslint-disable-next-line
+  }, [form.classe_id, editing]);
+  useEffect(() => {
+    if (!transferForm.classe_id) { setTransferSections([]); return; }
+    client.get(`/classes/${transferForm.classe_id}/sections`).then((r) => setTransferSections(r.data));
+  }, [transferForm.classe_id]);
   useEffect(() => { setPage(1); }, [q, classeId, statut, viewingAnnee]);
   useEffect(() => {
     const t = setTimeout(loadEleves, 250);
@@ -152,6 +209,7 @@ export default function Eleves() {
             <select value={statut} onChange={(e) => setStatut(e.target.value)}>
               <option value="actif">Actifs</option>
               <option value="redoublant">Redoublants</option>
+              <option value="orientation">En attente de transfert (pivot)</option>
               <option value="diplome">Diplômés</option>
               <option value="suspendu">Suspendus</option>
             </select>
@@ -191,6 +249,7 @@ export default function Eleves() {
                           <span className="flex gap-8" style={{ alignItems: 'center' }}>
                             <span className={`badge ${STATUT_BADGE[e.statut] || 'badge-default'}`}>{STATUT_LABELS[e.statut] || e.statut}</span>
                             {!!e.redoublant && <span className="badge badge-warning">Redoublant</span>}
+                            {!!e.en_attente_orientation && <span className="badge badge-warning" title="Classe pivot : transfert manuel requis"><i className="ph ph-git-fork"></i> En attente</span>}
                           </span>
                         )}
                     </td>
@@ -210,6 +269,9 @@ export default function Eleves() {
                               )}
                               {e.statut === 'actif' && (
                                 <button onClick={() => { retrograder(e); close(); }}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>
+                              )}
+                              {e.statut === 'actif' && user?.role === 'admin' && (
+                                <button onClick={() => { openTransfer(e); close(); }}><i className="ph ph-arrows-left-right"></i> Transférer</button>
                               )}
                               <button className="danger" onClick={() => { archiver(e); close(); }}><i className="ph ph-archive"></i> Archiver</button>
                             </>
@@ -256,13 +318,32 @@ export default function Eleves() {
                     </select>
                   </div>
                 </div>
-                <div className="form-group">
-                  <label>Classe *</label>
-                  <select value={form.classe_id} onChange={(e) => setForm({ ...form, classe_id: e.target.value })} required>
-                    <option value="">Sélectionner...</option>
-                    {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                  </select>
-                </div>
+                {editing ? (
+                  <div className="form-group">
+                    <label>Classe</label>
+                    <input value={editing.classe_nom || ''} disabled />
+                    <small className="text-muted">Pour changer de classe, utilisez "Transférer" ou "Rétrograder" depuis le menu de l'élève.</small>
+                  </div>
+                ) : (
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group">
+                      <label>Classe *</label>
+                      <select value={form.classe_id} onChange={(e) => setForm({ ...form, classe_id: e.target.value, section_id: '' })} required>
+                        <option value="">Sélectionner...</option>
+                        {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                      </select>
+                    </div>
+                    {inscriptionSections.length > 0 && (
+                      <div className="form-group">
+                        <label>Section</label>
+                        <select value={form.section_id} onChange={(e) => setForm({ ...form, section_id: e.target.value })}>
+                          <option value="">Non assignée pour l'instant</option>
+                          {inscriptionSections.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Date de naissance</label><input type="date" value={form.date_naissance} onChange={(e) => setForm({ ...form, date_naissance: e.target.value })} /></div>
                   <div className="form-group"><label>Lieu de naissance</label><input value={form.lieu_naissance} onChange={(e) => setForm({ ...form, lieu_naissance: e.target.value })} /></div>
@@ -279,6 +360,42 @@ export default function Eleves() {
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Annuler</button>
               <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : editing ? 'Enregistrer' : 'Inscrire'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${transferring ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setTransferring(null)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-arrows-left-right"></i><h3>Transférer {transferring?.prenom} {transferring?.nom}</h3>
+            <button className="modal-close" onClick={() => setTransferring(null)}><i className="ph ph-x"></i></button>
+          </div>
+          <form onSubmit={handleTransferSubmit}>
+            <div className="modal-body">
+              {transferError && <div className="alert alert-danger">{transferError}</div>}
+              <p className="text-muted">Classe actuelle : <strong>{transferring?.classe_nom}</strong></p>
+              <div className="form-group">
+                <label>Nouvelle classe *</label>
+                <select value={transferForm.classe_id} onChange={(e) => setTransferForm({ classe_id: e.target.value, section_id: '' })} required>
+                  <option value="">Sélectionner...</option>
+                  {classes.filter((c) => c.id !== transferring?.classe_id).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                </select>
+              </div>
+              {transferSections.length > 0 && (
+                <div className="form-group">
+                  <label>Section</label>
+                  <select value={transferForm.section_id} onChange={(e) => setTransferForm({ ...transferForm, section_id: e.target.value })}>
+                    <option value="">Non assignée pour l'instant</option>
+                    {transferSections.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </select>
+                </div>
+              )}
+              <p className="text-muted">Les frais de scolarité et d'inscription de l'élève seront mis à jour selon ceux de la nouvelle classe.</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setTransferring(null)}>Annuler</button>
+              <button type="submit" className="btn btn-accent" disabled={transferSaving}>{transferSaving ? 'Transfert...' : 'Transférer'}</button>
             </div>
           </form>
         </div>

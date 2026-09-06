@@ -17,6 +17,7 @@ export default function Caisse() {
   const [devise, setDevise] = useState('USD');
   const [typePaiement, setTypePaiement] = useState('scolarite');
   const [modePaiement, setModePaiement] = useState('especes');
+  const [sectionId, setSectionId] = useState('');
   const [periode, setPeriode] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
@@ -39,14 +40,22 @@ export default function Caisse() {
     setSelected(e);
     setResults([]);
     setQuery(`${e.prenom} ${e.nom} (${e.matricule})`);
+    setSectionId('');
     const res = await client.get(`/eleves/${e.id}/caisse-info`);
     setCaisseInfo(res.data);
   }
+
+  // Une classe a sections (A/B/C) : le premier paiement scolarite/inscription de l'annee
+  // doit preciser la section de l'eleve, qui reste ensuite la sienne pour le reste de
+  // l'annee. `sectionsDisponibles` n'est renvoye par l'API que si l'eleve n'en a pas encore.
+  const besoinSection = !!(caisseInfo?.sectionsDisponibles?.length
+    && (typePaiement === 'scolarite' || typePaiement === 'inscription'));
 
   async function handleSubmit(ev) {
     ev.preventDefault();
     setError('');
     if (!selected) { setError('Veuillez sélectionner un élève.'); return; }
+    if (besoinSection && !sectionId) { setError('Veuillez préciser la section de cet élève.'); return; }
     setLoading(true);
     try {
       const res = await client.post('/paiements', {
@@ -55,11 +64,12 @@ export default function Caisse() {
         devise,
         type_paiement: typePaiement,
         mode_paiement: modePaiement,
+        section_id: sectionId || undefined,
         periode,
         description,
       });
       setSuccess(res.data);
-      setMontant(''); setPeriode(''); setDescription('');
+      setMontant(''); setPeriode(''); setDescription(''); setSectionId('');
       const info = await client.get(`/eleves/${selected.id}/caisse-info`);
       setCaisseInfo(info.data);
       if (res.data.surplus) {
@@ -102,15 +112,31 @@ export default function Caisse() {
             <div className="card-header"><i className="ph ph-identification-card"></i><h3>Fiche élève</h3></div>
             <div className="card-body">
               <div className="mb-12"><strong>{caisseInfo.eleve.prenom} {caisseInfo.eleve.nom}</strong> — {caisseInfo.eleve.matricule}</div>
-              <div className="text-muted mb-16">{caisseInfo.eleve.classe_nom}</div>
+              <div className="text-muted mb-16">{caisseInfo.eleve.classe_nom}{caisseInfo.eleve.section_nom ? ` ${caisseInfo.eleve.section_nom}` : ''}</div>
 
               <div className="mb-12">
                 <div className="flex-between mb-12"><span>Scolarité</span><span>{format(caisseInfo.eleve.total_paye_scolarite)} / {format(caisseInfo.eleve.frais_scolarite_total)}</span></div>
-                <div className="progress-bar-wrap">
-                  <div className={`progress-bar-fill ${caisseInfo.eleve.reste_scolarite <= 0 ? 'green' : 'orange'}`}
-                    style={{ width: `${Math.min(100, (caisseInfo.eleve.total_paye_scolarite / (caisseInfo.eleve.frais_scolarite_total || 1)) * 100)}%` }} />
-                </div>
-                <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Reste: {format(caisseInfo.eleve.reste_scolarite)}</div>
+                {caisseInfo.tranches && caisseInfo.tranches.length > 0 ? (
+                  <div>
+                    {caisseInfo.tranches.map((t) => (
+                      <div key={t.numero} className="tranche-row">
+                        <div className="tranche-label"><span>Tranche {t.numero}</span><span>{format(t.paye)} / {format(t.montant)}</span></div>
+                        <div className="progress-bar-wrap sm">
+                          <div className={`progress-bar-fill ${t.pct >= 100 ? 'green' : t.pct >= 50 ? 'orange' : 'red'}`} style={{ width: `${t.pct}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                    <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Reste au total : {format(caisseInfo.eleve.reste_scolarite)}</div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="progress-bar-wrap">
+                      <div className={`progress-bar-fill ${caisseInfo.eleve.reste_scolarite <= 0 ? 'green' : 'orange'}`}
+                        style={{ width: `${Math.min(100, (caisseInfo.eleve.total_paye_scolarite / (caisseInfo.eleve.frais_scolarite_total || 1)) * 100)}%` }} />
+                    </div>
+                    <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Reste: {format(caisseInfo.eleve.reste_scolarite)}</div>
+                  </>
+                )}
               </div>
 
               <h4 style={{ fontSize: 13, marginTop: 16, marginBottom: 8 }}>Historique récent</h4>
@@ -184,6 +210,17 @@ export default function Caisse() {
                 </div>
               </div>
 
+              {besoinSection && (
+                <div className="form-group">
+                  <label>Section de l'élève *</label>
+                  <select value={sectionId} onChange={(e) => setSectionId(e.target.value)} required>
+                    <option value="">Sélectionner...</option>
+                    {caisseInfo.sectionsDisponibles.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </select>
+                  <small className="text-muted">Premier paiement de l'année pour cet élève : sa section reste ensuite celle-ci.</small>
+                </div>
+              )}
+
               <div className="form-grid form-grid-2">
                 <div className="form-group">
                   <label>Montant</label>
@@ -208,7 +245,7 @@ export default function Caisse() {
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
               </div>
 
-              <button className="btn btn-accent btn-block" type="submit" disabled={loading || !selected}>
+              <button className="btn btn-accent btn-block" type="submit" disabled={loading || !selected || (besoinSection && !sectionId)}>
                 {loading ? 'Enregistrement...' : <><i className="ph ph-check-circle"></i> Valider le paiement</>}
               </button>
             </div>

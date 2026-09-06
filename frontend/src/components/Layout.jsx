@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
 import { API_URL } from '../api/client.js';
+import client from '../api/client.js';
 import GlobalSearch from './GlobalSearch.jsx';
 
 const NAV_GROUPS = [
@@ -74,7 +75,18 @@ export default function Layout({ children }) {
   const { viewingAnnee, setViewingAnnee } = useAnnee();
   const { devise, deviseLocale, toggleDevise } = useDevise();
   const location = useLocation();
+  const navigate = useNavigate();
   const [title, subtitle] = findTitle(location.pathname);
+  const [alertes, setAlertes] = useState({ elevesEnAttenteOrientation: 0, remboursementsEnAttente: 0 });
+
+  // Rafraichi a chaque navigation (pas seulement au montage) pour que le bandeau reflete
+  // une action que l'utilisateur vient de faire (transfert, remboursement traite...) des
+  // qu'il change de page, sans avoir besoin d'un contexte/event-bus dedie.
+  useEffect(() => {
+    let annule = false;
+    client.get('/dashboard/alertes').then((res) => { if (!annule) setAlertes(res.data); }).catch(() => {});
+    return () => { annule = true; };
+  }, [location.pathname]);
 
   const visibleGroups = NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((item) => (item.admin ? user?.role === 'admin' : item.perm ? hasPermission(item.perm) : true)) }))
@@ -150,6 +162,22 @@ export default function Layout({ children }) {
 
       <div className="main-area">
         <div className="topbar-wrap">
+          {(alertes.elevesEnAttenteOrientation > 0 || alertes.remboursementsEnAttente > 0) && (
+            <div className="rappels-banner">
+              {alertes.elevesEnAttenteOrientation > 0 && (
+                <button type="button" onClick={() => navigate('/eleves?filtre=orientation')}>
+                  <i className="ph-bold ph-git-fork"></i>
+                  {alertes.elevesEnAttenteOrientation} élève(s) en attente de transfert inter-classe (classe pivot)
+                </button>
+              )}
+              {alertes.remboursementsEnAttente > 0 && (
+                <button type="button" onClick={() => navigate('/remboursements')}>
+                  <i className="ph-bold ph-arrow-counter-clockwise"></i>
+                  {alertes.remboursementsEnAttente} remboursement(s) en attente
+                </button>
+              )}
+            </div>
+          )}
           <header className="topbar">
             <div>
               <h1>{title}</h1>

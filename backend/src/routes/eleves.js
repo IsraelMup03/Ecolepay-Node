@@ -1,15 +1,39 @@
 const express = require('express');
 const db = require('../config/db');
-const { requireAuth, requirePermission, requireAnyPermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAnyPermission, requireAdmin } = require('../middleware/auth');
 const { genererMatricule, logActivite, envoyerCorbeille, getParam, getEcole, nomCompletConditions } = require('../utils/helpers');
 const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
 
 const router = express.Router();
 router.use(requireAuth);
 
+// Progression de la scolarite d'un eleve, tranche par tranche (voir classe_tranches) :
+// aucun paiement n'est jamais rattache a une tranche precise en base -- l'argent recu
+// remplit les tranches dans l'ordre, comme le fait deja le mecanisme de surplus. Chaque
+// montant de tranche est ajuste a la remise de l'eleve (meme pourcentage applique
+// uniformement sur toutes les tranches) pour que la derniere tranche se termine exactement
+// au montant que l'eleve doit reellement (frais_scolarite_total, deja remise).
+async function calculerTranches(classeId, remisePourcentage, totalPayeScolarite, fraisScolariteRef) {
+  const [tranchesClasse] = await db.query('SELECT numero, montant FROM classe_tranches WHERE classe_id=? ORDER BY numero ASC', [classeId]);
+  if (tranchesClasse.length === 0) return [];
+  const facteur = 1 - (parseFloat(remisePourcentage) || 0) / 100;
+  let cumulAvant = 0;
+  const dernier = tranchesClasse.length - 1;
+  return tranchesClasse.map((t, i) => {
+    const montant = parseFloat(t.montant) * facteur;
+    const paye = Math.min(Math.max(totalPayeScolarite - cumulAvant, 0), montant);
+    let pct = montant > 0 ? Math.round((paye / montant) * 100) : 0;
+    // Force 100% sur la derniere tranche si l'eleve est reellement solde : evite un arrondi
+    // flottant (ex: 99%) du au calcul independant de chaque tranche remisee.
+    if (i === dernier && totalPayeScolarite >= fraisScolariteRef) pct = 100;
+    cumulAvant += montant;
+    return { numero: t.numero, montant: Math.round(montant * 100) / 100, paye: Math.round(paye * 100) / 100, pct };
+  });
+}
+
 // GET /api/eleves?classe_id=&q=&statut=&annee=&page=&limit=  (annee: consulter une annee archivee)
 router.get('/', requirePermission('eleves'), async (req, res) => {
-  const { classe_id, q, statut = 'actif', redoublant, annee } = req.query;
+  const { classe_id, q, statut = 'actif', redoublant, en_attente_orientation, annee } = req.query;
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const offset = (page - 1) * limit;
@@ -54,6 +78,7 @@ router.get('/', requirePermission('eleves'), async (req, res) => {
   }
   if (statut) { where.push('e.statut=?'); params.push(statut); }
   if (redoublant) { where.push('e.redoublant=1'); }
+  if (en_attente_orientation) { where.push('e.en_attente_orientation=1'); }
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
   const [[{ total }]] = await db.query(`SELECT COUNT(*) as total FROM eleves e ${whereStr}`, params);
@@ -103,11 +128,11 @@ router.get('/by-classe/:classeId', requireAnyPermission('classes', 'eleves'), as
     : "DATE_FORMAT(p2.date_paiement, '%Y-%m-%d %H:%i:%s')";
 
   const [rows] = await db.query(
-    `SELECT e.id, e.nom, e.postnom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total, e.redoublant,
+    `SELECT e.id, e.nom, e.postnom, e.prenom, e.matricule, e.genre, e.frais_scolarite_total, e.redoublant, e.en_attente_orientation, s.nom as section_nom,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
             (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as dernier_paiement_date,
             (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
-     FROM eleves e WHERE e.classe_id=? AND e.statut='actif' ORDER BY e.nom ASC, e.prenom ASC`,
+     FROM eleves e LEFT JOIN sections s ON s.id=e.section_id WHERE e.classe_id=? AND e.statut='actif' ORDER BY e.nom ASC, e.prenom ASC`,
     [classeId]
   );
   res.json(rows.map((e) => ({
@@ -195,10 +220,11 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
   const { annee } = req.query;
   const [[eleve]] = await db.query(
     `SELECT e.*, c.nom as classe_nom, c.frais_scolarite as classe_frais, c.frais_inscription as classe_frais_inscription,
-            cs.nom as classe_sup_nom, ci.nom as classe_inf_nom
+            cs.nom as classe_sup_nom, ci.nom as classe_inf_nom, s.nom as section_nom
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      LEFT JOIN classes cs ON cs.id=c.classe_superieure_id
      LEFT JOIN classes ci ON ci.id=c.classe_inferieure_id
+     LEFT JOIN sections s ON s.id=e.section_id
      WHERE e.id=?`,
     [id]
   );
@@ -241,8 +267,16 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
   const resteInscription = Math.max(0, fraisInscriptionRef - totalPayeInscription);
   const pctScolarite = fraisScolariteRef > 0 ? Math.min(100, Math.round((totalPayeScolarite / fraisScolariteRef) * 100)) : 0;
 
+  // Sections disponibles pour la classe de l'eleve, seulement utile s'il n'en a pas encore
+  // (le formulaire de paiement de cette page doit alors imposer un choix, comme sur Caisse.jsx).
+  const [sectionsDisponibles] = (eleve.section_id || modeHistorique)
+    ? [[]]
+    : await db.query('SELECT id, nom FROM sections WHERE classe_id=? ORDER BY ordre ASC, nom ASC', [eleve.classe_id]);
+
+  const tranches = modeHistorique ? [] : await calculerTranches(eleve.classe_id, eleve.remise_pourcentage, totalPayeScolarite, fraisScolariteRef);
+
   res.json({
-    eleve, paiements, modeHistorique,
+    eleve, paiements, modeHistorique, sectionsDisponibles, tranches,
     totaux: { totalPayeScolarite, totalPayeInscription, totalRembourse, totalSurplusNonRendu, resteScolarite, resteInscription, pctScolarite },
   });
 });
@@ -251,16 +285,24 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
 router.get('/:id/caisse-info', requireAnyPermission('paiements', 'eleves'), async (req, res) => {
   const { id } = req.params;
   const [[eleve]] = await db.query(
-    `SELECT e.*, c.nom as classe_nom, c.frais_scolarite, c.frais_inscription,
+    `SELECT e.*, c.nom as classe_nom, c.frais_scolarite, c.frais_inscription, s.nom as section_nom,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_scolarite,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='inscription' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_inscription,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_global
-     FROM eleves e JOIN classes c ON c.id=e.classe_id WHERE e.id=?`,
+     FROM eleves e JOIN classes c ON c.id=e.classe_id LEFT JOIN sections s ON s.id=e.section_id WHERE e.id=?`,
     [id]
   );
   if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
   eleve.reste_scolarite = Math.max(0, eleve.frais_scolarite_total - eleve.total_paye_scolarite);
   eleve.reste_inscription = Math.max(0, eleve.frais_inscription_total - eleve.total_paye_inscription);
+
+  // Sections disponibles pour cette classe, seulement utile si l'eleve n'en a pas encore
+  // (Caisse.jsx doit alors imposer un choix avant le premier paiement scolarite/inscription).
+  const [sectionsDisponibles] = eleve.section_id
+    ? [[]]
+    : await db.query('SELECT id, nom FROM sections WHERE classe_id=? ORDER BY ordre ASC, nom ASC', [eleve.classe_id]);
+
+  const tranches = await calculerTranches(eleve.classe_id, eleve.remise_pourcentage, eleve.total_paye_scolarite, eleve.frais_scolarite_total);
 
   const [historique] = await db.query(
     `SELECT p.*, u.prenom as c_prenom, u.nom as c_nom,
@@ -269,13 +311,13 @@ router.get('/:id/caisse-info', requireAnyPermission('paiements', 'eleves'), asyn
      WHERE p.eleve_id=? AND p.annee_scolaire=? ORDER BY p.date_paiement DESC LIMIT 10`,
     [id, eleve.annee_scolaire]
   );
-  res.json({ eleve, historique });
+  res.json({ eleve, historique, sectionsDisponibles, tranches });
 });
 
 // POST /api/eleves (inscription)
 router.post('/', requirePermission('eleves'), async (req, res) => {
   const {
-    nom, postnom, prenom, genre = 'M', classe_id, date_naissance, lieu_naissance,
+    nom, postnom, prenom, genre = 'M', classe_id, section_id, date_naissance, lieu_naissance,
     nom_parent, telephone_parent, email_parent, adresse,
   } = req.body;
 
@@ -286,15 +328,25 @@ router.post('/', requirePermission('eleves'), async (req, res) => {
   const [[cls]] = await db.query('SELECT frais_scolarite, frais_inscription FROM classes WHERE id=?', [classe_id]);
   if (!cls) return res.status(400).json({ error: 'Classe invalide.' });
 
+  // Une inscription neuve peut choisir directement sa section (contrairement a un eleve
+  // promu, qui atterrit sans section et la choisit a son premier paiement) : on valide
+  // simplement qu'elle appartient bien a la classe indiquee.
+  let sectionIdValide = null;
+  if (section_id) {
+    const [[section]] = await db.query('SELECT id FROM sections WHERE id=? AND classe_id=?', [section_id, classe_id]);
+    if (!section) return res.status(400).json({ error: 'Section invalide pour cette classe.' });
+    sectionIdValide = section.id;
+  }
+
   const annee = await getParam('annee_scolaire_courante');
   const matricule = await genererMatricule();
 
   const [result] = await db.query(
-    `INSERT INTO eleves (matricule,nom,postnom,prenom,genre,date_naissance,lieu_naissance,classe_id,nom_parent,telephone_parent,email_parent,adresse,statut,date_inscription,annee_scolaire,frais_scolarite_total,frais_inscription_total,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'actif',CURDATE(),?,?,?,?)`,
+    `INSERT INTO eleves (matricule,nom,postnom,prenom,genre,date_naissance,lieu_naissance,classe_id,section_id,nom_parent,telephone_parent,email_parent,adresse,statut,date_inscription,annee_scolaire,frais_scolarite_total,frais_inscription_total,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'actif',CURDATE(),?,?,?,?)`,
     [
       matricule, nom, postnom || null, prenom, genre, date_naissance || null, lieu_naissance || null,
-      classe_id, nom_parent || null, telephone_parent || null, email_parent || null, adresse || null,
+      classe_id, sectionIdValide, nom_parent || null, telephone_parent || null, email_parent || null, adresse || null,
       annee, cls.frais_scolarite, cls.frais_inscription, req.user.id,
     ]
   );
@@ -304,12 +356,16 @@ router.post('/', requirePermission('eleves'), async (req, res) => {
 });
 
 // PUT /api/eleves/:id (modification)
+// Ne touche jamais classe_id/section_id : tout changement de classe doit passer par
+// /transferer, /retrograder ou la promotion annuelle, qui synchronisent correctement les
+// frais et reinitialisent la section -- laisser ce champ ici le laisserait facilement
+// desynchronise (frais herites de l'ancienne classe, section d'une autre classe, etc.).
 router.put('/:id', requirePermission('eleves'), async (req, res) => {
   const { id } = req.params;
-  const { nom, postnom, prenom, genre, date_naissance, lieu_naissance, classe_id, nom_parent, telephone_parent, email_parent, adresse, statut } = req.body;
+  const { nom, postnom, prenom, genre, date_naissance, lieu_naissance, nom_parent, telephone_parent, email_parent, adresse, statut } = req.body;
   await db.query(
-    `UPDATE eleves SET nom=?,postnom=?,prenom=?,genre=?,date_naissance=?,lieu_naissance=?,classe_id=?,nom_parent=?,telephone_parent=?,email_parent=?,adresse=?,statut=? WHERE id=?`,
-    [nom, postnom || null, prenom, genre, date_naissance || null, lieu_naissance, classe_id, nom_parent, telephone_parent, email_parent, adresse, statut, id]
+    `UPDATE eleves SET nom=?,postnom=?,prenom=?,genre=?,date_naissance=?,lieu_naissance=?,nom_parent=?,telephone_parent=?,email_parent=?,adresse=?,statut=? WHERE id=?`,
+    [nom, postnom || null, prenom, genre, date_naissance || null, lieu_naissance, nom_parent, telephone_parent, email_parent, adresse, statut, id]
   );
   await logActivite(req.user.id, 'Eleve modifie', `ID:${id}`, req.ip);
   const [[updated]] = await db.query('SELECT * FROM eleves WHERE id=?', [id]);
@@ -337,18 +393,83 @@ router.put('/:id/statut', requirePermission('eleves'), async (req, res) => {
 router.post('/:id/retrograder', requirePermission('eleves'), async (req, res) => {
   const { id } = req.params;
   const [[row]] = await db.query(
-    `SELECT e.classe_id, c.classe_inferieure_id FROM eleves e JOIN classes c ON c.id=e.classe_id WHERE e.id=?`,
+    `SELECT e.classe_id, e.remise_pourcentage, c.classe_inferieure_id FROM eleves e JOIN classes c ON c.id=e.classe_id WHERE e.id=?`,
     [id]
   );
   if (!row || !row.classe_inferieure_id) {
     return res.status(400).json({ error: 'Aucune classe inferieure definie pour cette classe.' });
   }
   const [[nci]] = await db.query('SELECT frais_scolarite, frais_inscription FROM classes WHERE id=?', [row.classe_inferieure_id]);
+  // La remise deja accordee a l'eleve est conservee (pas reinitialisee) sur son nouveau
+  // montant de scolarite. section_id=NULL : l'ancienne section (A/B/C) n'a plus de sens
+  // dans la classe inferieure. en_attente_orientation=0 par securite/coherence : quitter
+  // une classe (pivot ou non) ne doit jamais laisser une attente de transfert perimee.
+  const facteur = 1 - (parseFloat(row.remise_pourcentage) || 0) / 100;
   await db.query(
-    `UPDATE eleves SET classe_id=?, redoublant=1, frais_scolarite_total=?, frais_inscription_total=? WHERE id=?`,
-    [row.classe_inferieure_id, nci.frais_scolarite, nci.frais_inscription, id]
+    `UPDATE eleves SET classe_id=?, section_id=NULL, redoublant=1, frais_scolarite_total=?, frais_inscription_total=?, en_attente_orientation=0 WHERE id=?`,
+    [row.classe_inferieure_id, nci.frais_scolarite * facteur, nci.frais_inscription, id]
   );
   await logActivite(req.user.id, 'Eleve retrograde', `ID:${id}`, req.ip);
+  res.json({ success: true });
+});
+
+// POST /api/eleves/:id/transferer  { classe_id, section_id? }
+// Transfert libre vers n'importe quelle classe (contrairement a /retrograder, limite a la
+// classe inferieure preconfiguree) : reserve aux administrateurs, puisque c'est un
+// mouvement sans pointeur de validation prealable. Ne touche pas au flag redoublant (ce
+// n'est pas un redoublement, juste un changement administratif de classe).
+router.post('/:id/transferer', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { classe_id, section_id } = req.body;
+  if (!classe_id) return res.status(400).json({ error: 'Classe cible requise.' });
+
+  const [[eleve]] = await db.query('SELECT classe_id, remise_pourcentage FROM eleves WHERE id=?', [id]);
+  if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
+  if (String(eleve.classe_id) === String(classe_id)) {
+    return res.status(400).json({ error: 'Cet eleve est deja dans cette classe.' });
+  }
+
+  const [[cible]] = await db.query('SELECT frais_scolarite, frais_inscription FROM classes WHERE id=?', [classe_id]);
+  if (!cible) return res.status(400).json({ error: 'Classe cible invalide.' });
+
+  let sectionIdValide = null;
+  if (section_id) {
+    const [[section]] = await db.query('SELECT id FROM sections WHERE id=? AND classe_id=?', [section_id, classe_id]);
+    if (!section) return res.status(400).json({ error: 'Section invalide pour la classe cible.' });
+    sectionIdValide = section.id;
+  }
+
+  // La remise deja accordee a l'eleve est conservee (pas reinitialisee) sur son nouveau
+  // montant de scolarite. en_attente_orientation=0 : ce transfert resout precisement
+  // l'attente (l'eleve quitte sa classe pivot pour la classe qu'il a choisie).
+  const facteur = 1 - (parseFloat(eleve.remise_pourcentage) || 0) / 100;
+  await db.query(
+    `UPDATE eleves SET classe_id=?, section_id=?, frais_scolarite_total=?, frais_inscription_total=?, en_attente_orientation=0 WHERE id=?`,
+    [classe_id, sectionIdValide, cible.frais_scolarite * facteur, cible.frais_inscription, id]
+  );
+  await logActivite(req.user.id, 'Eleve transfere', `ID:${id} -> Classe ID:${classe_id}`, req.ip);
+  res.json({ success: true });
+});
+
+// PUT /api/eleves/:id/remise  { remise_pourcentage }
+// Remise individuelle (0 a 100) accordee a un eleve, ex: reduction familiale -- s'applique
+// uniquement a la scolarite (jamais aux frais d'inscription). Recalcule immediatement
+// frais_scolarite_total a partir des frais actuels de la classe de l'eleve.
+router.put('/:id/remise', requirePermission('eleves'), async (req, res) => {
+  const { id } = req.params;
+  const remise = parseFloat(req.body.remise_pourcentage);
+  if (!(remise >= 0) || remise > 100) {
+    return res.status(400).json({ error: 'La remise doit etre comprise entre 0 et 100.' });
+  }
+  const [[eleve]] = await db.query('SELECT classe_id FROM eleves WHERE id=?', [id]);
+  if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
+  const [[cls]] = await db.query('SELECT frais_scolarite FROM classes WHERE id=?', [eleve.classe_id]);
+
+  await db.query(
+    'UPDATE eleves SET remise_pourcentage=?, frais_scolarite_total=? WHERE id=?',
+    [remise, cls.frais_scolarite * (1 - remise / 100), id]
+  );
+  await logActivite(req.user.id, 'Remise eleve modifiee', `ID:${id} -> ${remise}%`, req.ip);
   res.json({ success: true });
 });
 
