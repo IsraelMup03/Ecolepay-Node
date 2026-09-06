@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
-import { useAuth } from '../context/AuthContext.jsx';
-import RowMenu from '../components/RowMenu.jsx';
 
 const STATUT_PAIEMENT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
 const STATUT_PAIEMENT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
@@ -14,7 +12,7 @@ const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplôm�
 export default function Eleves() {
   const { viewingAnnee } = useAnnee();
   const { format, devise } = useDevise();
-  const { user } = useAuth();
+  const navigate = useNavigate();
   const [eleves, setEleves] = useState([]);
   const [classes, setClasses] = useState([]);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -28,16 +26,10 @@ export default function Eleves() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', section_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
   const [inscriptionSections, setInscriptionSections] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [transferring, setTransferring] = useState(null);
-  const [transferForm, setTransferForm] = useState({ classe_id: '', section_id: '' });
-  const [transferSections, setTransferSections] = useState([]);
-  const [transferSaving, setTransferSaving] = useState(false);
-  const [transferError, setTransferError] = useState('');
 
   // Nettoie l'URL une fois le filtre "orientation" applique, pour ne pas laisser un
   // ?filtre=orientation perime si l'utilisateur change ensuite le select lui-meme.
@@ -62,94 +54,20 @@ export default function Eleves() {
     setLoading(false);
   }
 
-  async function toggleStatut(e) {
-    const nouveau = e.statut === 'actif' ? 'suspendu' : 'actif';
-    const label = nouveau === 'suspendu' ? 'suspendre' : 'réactiver';
-    if (!window.confirm(`Confirmer : ${label} ${e.prenom} ${e.nom} ?`)) return;
-    try {
-      await client.put(`/eleves/${e.id}/statut`, { statut: nouveau });
-      loadEleves();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erreur.');
-    }
-  }
-
-  async function retrograder(e) {
-    if (!window.confirm(`Rétrograder ${e.prenom} ${e.nom} vers la classe inférieure ?`)) return;
-    try {
-      await client.post(`/eleves/${e.id}/retrograder`);
-      loadEleves();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erreur.');
-    }
-  }
-
-  async function handleTransferSubmit(e) {
-    e.preventDefault();
-    setTransferError('');
-    setTransferSaving(true);
-    try {
-      await client.post(`/eleves/${transferring.id}/transferer`, {
-        classe_id: transferForm.classe_id,
-        section_id: transferForm.section_id || null,
-      });
-      setTransferring(null);
-      loadEleves();
-    } catch (err) {
-      setTransferError(err.response?.data?.error || 'Erreur.');
-    } finally {
-      setTransferSaving(false);
-    }
-  }
-
-  async function archiver(e) {
-    if (!window.confirm(`Archiver ${e.prenom} ${e.nom} ? Il sera déplacé vers la corbeille et pourra être restauré pendant 30 jours.`)) return;
-    try {
-      await client.delete(`/eleves/${e.id}`);
-      loadEleves();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erreur.');
-    }
-  }
-
   function openNew() {
-    setEditing(null);
     setForm({ nom: '', postnom: '', prenom: '', genre: 'M', classe_id: '', section_id: '', date_naissance: '', lieu_naissance: '', nom_parent: '', telephone_parent: '', email_parent: '', adresse: '' });
     setInscriptionSections([]);
     setError('');
     setShowModal(true);
   }
 
-  function openEdit(e) {
-    setEditing(e);
-    setForm({
-      nom: e.nom || '', postnom: e.postnom || '', prenom: e.prenom || '', genre: e.genre || 'M', classe_id: e.classe_id || '', section_id: '',
-      date_naissance: e.date_naissance || '', lieu_naissance: e.lieu_naissance || '',
-      nom_parent: e.nom_parent || '', telephone_parent: e.telephone_parent || '', email_parent: e.email_parent || '', adresse: e.adresse || '',
-    });
-    setError('');
-    setShowModal(true);
-  }
-
-  function openTransfer(e) {
-    setTransferring(e);
-    setTransferForm({ classe_id: '', section_id: '' });
-    setTransferSections([]);
-    setTransferError('');
-  }
-
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
   // Sections de la classe choisie a l'inscription (une inscription neuve peut choisir sa
   // section directement, contrairement a un eleve promu qui la choisit a son premier paiement).
   useEffect(() => {
-    if (editing || !form.classe_id) { setInscriptionSections([]); return; }
+    if (!form.classe_id) { setInscriptionSections([]); return; }
     client.get(`/classes/${form.classe_id}/sections`).then((r) => setInscriptionSections(r.data));
-    // eslint-disable-next-line
-  }, [form.classe_id, editing]);
-  useEffect(() => {
-    if (!transferForm.classe_id) { setTransferSections([]); return; }
-    client.get(`/classes/${transferForm.classe_id}/sections`).then((r) => setTransferSections(r.data));
-  }, [transferForm.classe_id]);
+  }, [form.classe_id]);
   useEffect(() => { setPage(1); }, [q, classeId, statut, viewingAnnee]);
   useEffect(() => {
     const t = setTimeout(loadEleves, 250);
@@ -162,13 +80,7 @@ export default function Eleves() {
     setError('');
     setSaving(true);
     try {
-      if (editing) {
-        // statut n'est pas modifiable ici (dediee au toggle Suspendre/Reactiver) mais le PUT
-        // l'exige : on renvoie la valeur actuelle pour ne pas l'ecraser par erreur.
-        await client.put(`/eleves/${editing.id}`, { ...form, statut: editing.statut });
-      } else {
-        await client.post('/eleves', form);
-      }
+      await client.post('/eleves', form);
       setShowModal(false);
       loadEleves();
     } catch (err) {
@@ -227,15 +139,15 @@ export default function Eleves() {
         <div className="table-container">
           <table>
             <thead>
-              <tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Statut</th><th>Payé</th><th>Reste</th><th></th><th></th></tr>
+              <tr><th>Matricule</th><th>Élève</th><th>Classe</th><th>Statut</th><th>Payé</th><th>Reste</th></tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
-              {!loading && eleves.length === 0 && <tr><td colSpan={8}><div className="empty-state"><i className="ph ph-user-focus"></i><h3>Aucun élève trouvé</h3><p>Essayez d'autres critères ou inscrivez un nouvel élève.</p></div></td></tr>}
+              {loading && <tr><td colSpan={6}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {!loading && eleves.length === 0 && <tr><td colSpan={6}><div className="empty-state"><i className="ph ph-user-focus"></i><h3>Aucun élève trouvé</h3><p>Essayez d'autres critères ou inscrivez un nouvel élève.</p></div></td></tr>}
               {eleves.map((e) => {
                 const reste = Math.max(0, e.frais_scolarite_total - e.total_paye);
                 return (
-                  <tr key={e.id}>
+                  <tr key={e.id} onClick={() => navigate(`/eleves/${e.id}`)} style={{ cursor: 'pointer' }} title="Ouvrir la fiche de l'élève">
                     <td><code>{e.matricule}</code></td>
                     <td className="flex gap-8" style={{ alignItems: 'center' }}>
                       <div className={e.genre === 'F' ? 'genre-f' : 'genre-m'}>{e.genre}</div>
@@ -255,30 +167,6 @@ export default function Eleves() {
                     </td>
                     <td>{format(e.total_paye)}</td>
                     <td className={reste > 0 ? '' : 'text-muted'}><strong style={{ color: reste > 0 ? 'var(--danger)' : 'var(--success)' }}>{format(reste)}</strong></td>
-                    <td><Link to={`/eleves/${e.id}`} className="btn btn-outline btn-sm"><i className="ph ph-eye"></i> Fiche</Link></td>
-                    <td>
-                      {e.statut !== 'transfere' && (
-                        <RowMenu>
-                          {(close) => (
-                            <>
-                              <button onClick={() => { openEdit(e); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
-                              {(e.statut === 'actif' || e.statut === 'suspendu') && (
-                                <button onClick={() => { toggleStatut(e); close(); }}>
-                                  <i className={e.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {e.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
-                                </button>
-                              )}
-                              {e.statut === 'actif' && (
-                                <button onClick={() => { retrograder(e); close(); }}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>
-                              )}
-                              {e.statut === 'actif' && user?.role === 'admin' && (
-                                <button onClick={() => { openTransfer(e); close(); }}><i className="ph ph-arrows-left-right"></i> Transférer</button>
-                              )}
-                              <button className="danger" onClick={() => { archiver(e); close(); }}><i className="ph ph-archive"></i> Archiver</button>
-                            </>
-                          )}
-                        </RowMenu>
-                      )}
-                    </td>
                   </tr>
                 );
               })}
@@ -297,7 +185,7 @@ export default function Eleves() {
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
           <div className="modal-header">
-            <i className={editing ? 'ph ph-pencil-simple' : 'ph ph-user-plus'}></i><h3>{editing ? `Modifier ${editing.prenom} ${editing.nom}` : 'Inscrire un nouvel élève'}</h3>
+            <i className="ph ph-user-plus"></i><h3>Inscrire un nouvel élève</h3>
             <button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button>
           </div>
           <form onSubmit={handleSubmit}>
@@ -318,32 +206,24 @@ export default function Eleves() {
                     </select>
                   </div>
                 </div>
-                {editing ? (
+                <div className="form-grid form-grid-2">
                   <div className="form-group">
-                    <label>Classe</label>
-                    <input value={editing.classe_nom || ''} disabled />
-                    <small className="text-muted">Pour changer de classe, utilisez "Transférer" ou "Rétrograder" depuis le menu de l'élève.</small>
+                    <label>Classe *</label>
+                    <select value={form.classe_id} onChange={(e) => setForm({ ...form, classe_id: e.target.value, section_id: '' })} required>
+                      <option value="">Sélectionner...</option>
+                      {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                    </select>
                   </div>
-                ) : (
-                  <div className="form-grid form-grid-2">
+                  {inscriptionSections.length > 0 && (
                     <div className="form-group">
-                      <label>Classe *</label>
-                      <select value={form.classe_id} onChange={(e) => setForm({ ...form, classe_id: e.target.value, section_id: '' })} required>
-                        <option value="">Sélectionner...</option>
-                        {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                      <label>Section</label>
+                      <select value={form.section_id} onChange={(e) => setForm({ ...form, section_id: e.target.value })}>
+                        <option value="">Non assignée pour l'instant</option>
+                        {inscriptionSections.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
                       </select>
                     </div>
-                    {inscriptionSections.length > 0 && (
-                      <div className="form-group">
-                        <label>Section</label>
-                        <select value={form.section_id} onChange={(e) => setForm({ ...form, section_id: e.target.value })}>
-                          <option value="">Non assignée pour l'instant</option>
-                          {inscriptionSections.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
                 <div className="form-grid form-grid-2">
                   <div className="form-group"><label>Date de naissance</label><input type="date" value={form.date_naissance} onChange={(e) => setForm({ ...form, date_naissance: e.target.value })} /></div>
                   <div className="form-group"><label>Lieu de naissance</label><input value={form.lieu_naissance} onChange={(e) => setForm({ ...form, lieu_naissance: e.target.value })} /></div>
@@ -359,43 +239,7 @@ export default function Eleves() {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Annuler</button>
-              <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : editing ? 'Enregistrer' : 'Inscrire'}</button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <div className={`modal-backdrop ${transferring ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setTransferring(null)}>
-        <div className="modal">
-          <div className="modal-header">
-            <i className="ph ph-arrows-left-right"></i><h3>Transférer {transferring?.prenom} {transferring?.nom}</h3>
-            <button className="modal-close" onClick={() => setTransferring(null)}><i className="ph ph-x"></i></button>
-          </div>
-          <form onSubmit={handleTransferSubmit}>
-            <div className="modal-body">
-              {transferError && <div className="alert alert-danger">{transferError}</div>}
-              <p className="text-muted">Classe actuelle : <strong>{transferring?.classe_nom}</strong></p>
-              <div className="form-group">
-                <label>Nouvelle classe *</label>
-                <select value={transferForm.classe_id} onChange={(e) => setTransferForm({ classe_id: e.target.value, section_id: '' })} required>
-                  <option value="">Sélectionner...</option>
-                  {classes.filter((c) => c.id !== transferring?.classe_id).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                </select>
-              </div>
-              {transferSections.length > 0 && (
-                <div className="form-group">
-                  <label>Section</label>
-                  <select value={transferForm.section_id} onChange={(e) => setTransferForm({ ...transferForm, section_id: e.target.value })}>
-                    <option value="">Non assignée pour l'instant</option>
-                    {transferSections.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-                  </select>
-                </div>
-              )}
-              <p className="text-muted">Les frais de scolarité et d'inscription de l'élève seront mis à jour selon ceux de la nouvelle classe.</p>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setTransferring(null)}>Annuler</button>
-              <button type="submit" className="btn btn-accent" disabled={transferSaving}>{transferSaving ? 'Transfert...' : 'Transférer'}</button>
+              <button type="submit" className="btn btn-accent" disabled={saving}>{saving ? 'Enregistrement...' : 'Inscrire'}</button>
             </div>
           </form>
         </div>

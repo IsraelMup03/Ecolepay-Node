@@ -27,7 +27,7 @@ export default function Dashboard() {
   return (
     <div>
       {!viewingAnnee && (
-        <div className="flex-between mb-16">
+        <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div />
           <GenererRapportButton />
         </div>

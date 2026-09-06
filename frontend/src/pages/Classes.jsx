@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
-import RowMenu from '../components/RowMenu.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
 
 const empty = { nom: '', frais_scolarite: '', frais_inscription: '', classe_superieure_id: '', classe_inferieure_id: '', effectif_max: 50, ordre: 0, aDesSections: false, nb_sections: 3, tranches: [], est_pivot: false };
@@ -13,13 +12,9 @@ export default function Classes() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [editSections, setEditSections] = useState([]);
-  const [nouvelleSection, setNouvelleSection] = useState('');
-  const [sectionError, setSectionError] = useState('');
   const [nombreTranchesGlobal, setNombreTranchesGlobal] = useState(1);
 
   async function load() {
@@ -37,69 +32,16 @@ export default function Classes() {
   }, []);
 
   function openNew() {
-    setEditing(null);
     const nbTranches = nombreTranchesGlobal > 1 ? nombreTranchesGlobal : 0;
     setForm({ ...empty, tranches: Array(nbTranches).fill('') });
     setError(''); setShowModal(true);
-  }
-  async function openEdit(c) {
-    setEditing(c);
-    setError(''); setShowModal(true);
-    setSectionError('');
-    setNouvelleSection('');
-    const [sectionsRes, tranchesRes] = await Promise.all([
-      client.get(`/classes/${c.id}/sections`),
-      client.get(`/classes/${c.id}/tranches`),
-    ]);
-    setEditSections(sectionsRes.data);
-    // Une classe qui a deja des tranches garde exactement son propre decoupage, meme si le
-    // reglage global a change depuis ; une classe sans tranches suit le reglage global
-    // actuel, comme pour une nouvelle classe.
-    const tranchesArr = tranchesRes.data.length > 0
-      ? tranchesRes.data.map((t) => String(t.montant))
-      : (nombreTranchesGlobal > 1 ? Array(nombreTranchesGlobal).fill('') : []);
-    setForm({
-      nom: c.nom, frais_scolarite: c.frais_scolarite, frais_inscription: c.frais_inscription,
-      classe_superieure_id: c.classe_superieure_id || '', classe_inferieure_id: c.classe_inferieure_id || '',
-      effectif_max: c.effectif_max, ordre: c.ordre, tranches: tranchesArr, est_pivot: !!c.est_pivot,
-    });
-  }
-
-  // Une classe creee au depart sans sections peut en recevoir plus tard (ex: l'ecole ouvre
-  // une deuxieme section en cours d'annee) : geree directement depuis "Modifier", sans avoir
-  // a passer par la fiche detaillee de la classe.
-  async function ajouterSectionEdit(e) {
-    e.preventDefault();
-    setSectionError('');
-    if (!nouvelleSection.trim()) return;
-    try {
-      const res = await client.post(`/classes/${editing.id}/sections`, { nom: nouvelleSection.trim() });
-      setEditSections([...editSections, res.data]);
-      setNouvelleSection('');
-    } catch (err) {
-      setSectionError(err.response?.data?.error || 'Erreur.');
-    }
-  }
-
-  async function supprimerSectionEdit(section) {
-    if (!window.confirm(`Supprimer la section "${editing.nom} ${section.nom}" ?`)) return;
-    try {
-      await client.delete(`/classes/sections/${section.id}`);
-      setEditSections(editSections.filter((s) => s.id !== section.id));
-    } catch (err) {
-      setSectionError(err.response?.data?.error || 'Erreur.');
-    }
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      if (editing) {
-        await client.put(`/classes/${editing.id}`, form);
-      } else {
-        await client.post('/classes', { ...form, nb_sections: form.aDesSections ? form.nb_sections : 0 });
-      }
+      await client.post('/classes', { ...form, nb_sections: form.aDesSections ? form.nb_sections : 0 });
       setShowModal(false);
       load();
     } catch (err) {
@@ -115,35 +57,6 @@ export default function Classes() {
     setForm({ ...form, tranches: copie });
   }
   const totalTranches = form.tranches.reduce((s, t) => s + (parseFloat(t) || 0), 0);
-
-  async function supprimer(c) {
-    if (!window.confirm(`Supprimer la classe "${c.nom}" ? Elle sera déplacée vers la corbeille et pourra être restaurée pendant 30 jours.`)) return;
-    try {
-      await client.delete(`/classes/${c.id}`);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erreur.');
-    }
-  }
-
-  async function toggleActif(c) {
-    try {
-      await client.put(`/classes/${c.id}`, {
-        nom: c.nom,
-        frais_scolarite: c.frais_scolarite,
-        frais_inscription: c.frais_inscription,
-        classe_superieure_id: c.classe_superieure_id || '',
-        classe_inferieure_id: c.classe_inferieure_id || '',
-        effectif_max: c.effectif_max,
-        ordre: c.ordre,
-        actif: c.actif ? 0 : 1,
-        est_pivot: c.est_pivot,
-      });
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erreur.');
-    }
-  }
 
   const navigate = useNavigate();
 
@@ -171,14 +84,9 @@ export default function Classes() {
     }
   }
 
-  function sortClasseEleves(field) {
-    // no-op: kept for compatibility with older modal code
-    return;
-  }
-
   return (
     <div>
-      <div className="flex-between mb-16">
+      <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div className="text-muted">
           {viewingAnnee ? `${classes.length} classe(s) avec des élèves en ${viewingAnnee}` : `${classes.filter((c) => c.actif).length} classe(s) active(s)`}
         </div>
@@ -188,18 +96,13 @@ export default function Classes() {
       <div className="card">
         <div className="table-container">
           <table>
-            <thead><tr><th>Ordre</th><th>Nom</th><th>Sections</th><th>Frais scolarité</th><th>Frais inscription</th><th>Effectif max</th><th>Classe suivante</th><th>{viewingAnnee ? 'Élèves cette année' : 'Statut'}</th><th></th></tr></thead>
+            <thead><tr><th>Ordre</th><th>Nom</th><th>Sections</th><th>Frais scolarité</th><th>Frais inscription</th><th>Effectif max</th><th>Classe suivante</th><th>{viewingAnnee ? 'Élèves cette année' : 'Statut'}</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={9}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
+              {loading && <tr><td colSpan={8}><div className="loading-inline"><div className="spinner"></div> Chargement...</div></td></tr>}
               {!loading && classes.map((c) => (
-                <tr key={c.id}>
+                <tr key={c.id} onClick={() => openViewClass(c)} style={{ cursor: 'pointer' }} title="Ouvrir la fiche de la classe">
                   <td>{c.ordre}</td>
-                  <td>
-                    <strong>{c.nom}</strong>
-                    <div>
-                      <button className="btn btn-link btn-sm" onClick={() => openViewClass(c)} style={{ marginLeft: 8 }}>Voir</button>
-                    </div>
-                  </td>
+                  <td><strong>{c.nom}</strong></td>
                   <td>
                     {(c.sections || []).length > 0
                       ? (c.sections || []).map((s) => <span key={s.id} className="badge badge-default" style={{ marginRight: 4 }}>{s.nom}</span>)
@@ -218,22 +121,6 @@ export default function Classes() {
                       ? <span className="badge badge-info">{c.nb_eleves_annee} élève(s)</span>
                       : <span className={`badge ${c.actif ? 'badge-success' : 'badge-default'}`}>{c.actif ? 'Active' : 'Archivée'}</span>}
                   </td>
-                  <td>
-                    {!viewingAnnee && (
-                      <RowMenu>
-                        {(close) => (
-                          <>
-                            <button onClick={() => { openEdit(c); close(); }}><i className="ph ph-pencil-simple"></i> Modifier</button>
-                            <button onClick={() => { toggleActif(c); close(); }}>
-                              <i className={c.actif ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {c.actif ? 'Désactiver' : 'Activer'}
-                            </button>
-                            <div className="row-menu-divider"></div>
-                            <button className="danger" onClick={() => { supprimer(c); close(); }}><i className="ph ph-trash"></i> Supprimer</button>
-                          </>
-                        )}
-                      </RowMenu>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -244,7 +131,7 @@ export default function Classes() {
       <div className={`modal-backdrop ${showModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
         <div className="modal">
           <div className="modal-header">
-            <i className="ph ph-buildings"></i><h3>{editing ? 'Modifier la classe' : 'Nouvelle classe'}</h3>
+            <i className="ph ph-buildings"></i><h3>Nouvelle classe</h3>
             <button className="modal-close" onClick={() => setShowModal(false)}><i className="ph ph-x"></i></button>
           </div>
           <form onSubmit={handleSubmit}>
@@ -293,7 +180,7 @@ export default function Classes() {
                     <label>Classe supérieure (promotion)</label>
                     <select value={form.classe_superieure_id} onChange={(e) => setForm({ ...form, classe_superieure_id: e.target.value })}>
                       <option value="">Aucune (dernière classe / diplôme)</option>
-                      {classes.filter((c) => !editing || c.id !== editing.id).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                      {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                     </select>
                     <small>Utilisée lors de la promotion annuelle.</small>
                   </div>
@@ -302,50 +189,23 @@ export default function Classes() {
                   <label>Classe inférieure (redoublement)</label>
                   <select value={form.classe_inferieure_id} onChange={(e) => setForm({ ...form, classe_inferieure_id: e.target.value })}>
                     <option value="">Aucune</option>
-                    {classes.filter((c) => !editing || c.id !== editing.id).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                   </select>
                 </div>
-                {!editing && (
-                  <div className="form-group">
-                    <label className="flex gap-8" style={{ alignItems: 'center' }}>
-                      <input type="checkbox" checked={form.aDesSections} onChange={(e) => setForm({ ...form, aDesSections: e.target.checked })} style={{ width: 'auto' }} />
-                      Cette classe a des sections (A, B, C...)
-                    </label>
-                    {form.aDesSections && (
-                      <div style={{ marginTop: 8 }}>
-                        <label>Nombre de sections</label>
-                        <input type="number" min="2" max="26" value={form.nb_sections} onChange={(e) => setForm({ ...form, nb_sections: e.target.value })} />
-                        <small className="text-muted">Créera automatiquement "{form.nom || 'Classe'} A", "{form.nom || 'Classe'} B"...</small>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {editing && (
-                  <div className="form-group">
-                    <label>Sections</label>
-                    {sectionError && <div className="alert alert-danger">{sectionError}</div>}
-                    {editSections.length === 0 && (
-                      <div className="text-muted mb-8">Aucune section pour l'instant — tous les élèves sont directement dans "{editing.nom}".</div>
-                    )}
-                    {editSections.length > 0 && (
-                      <table className="mb-8">
-                        <tbody>
-                          {editSections.map((s) => (
-                            <tr key={s.id}>
-                              <td>{editing.nom} {s.nom}</td>
-                              <td><button type="button" className="btn btn-link btn-sm danger" onClick={() => supprimerSectionEdit(s)}><i className="ph ph-trash"></i></button></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                    <div className="flex gap-8">
-                      <input placeholder="Ex: A, B, C..." value={nouvelleSection} onChange={(e) => setNouvelleSection(e.target.value)} style={{ flex: 1 }} />
-                      <button type="button" className="btn btn-outline btn-sm" onClick={ajouterSectionEdit}>Ajouter</button>
+                <div className="form-group">
+                  <label className="flex gap-8" style={{ alignItems: 'center' }}>
+                    <input type="checkbox" checked={form.aDesSections} onChange={(e) => setForm({ ...form, aDesSections: e.target.checked })} style={{ width: 'auto' }} />
+                    Cette classe a des sections (A, B, C...)
+                  </label>
+                  {form.aDesSections && (
+                    <div style={{ marginTop: 8 }}>
+                      <label>Nombre de sections</label>
+                      <input type="number" min="2" max="26" value={form.nb_sections} onChange={(e) => setForm({ ...form, nb_sections: e.target.value })} />
+                      <small className="text-muted">Créera automatiquement "{form.nom || 'Classe'} A", "{form.nom || 'Classe'} B"...</small>
                     </div>
-                    <small className="text-muted">Une classe créée sans sections peut en recevoir à tout moment, par exemple si l'école ouvre une nouvelle section en cours d'année.</small>
-                  </div>
-                )}
+                  )}
+                  <small className="text-muted" style={{ display: 'block', marginTop: 4 }}>D'autres sections pourront être ajoutées ou supprimées à tout moment depuis le bouton "Gérer" de la fiche de la classe.</small>
+                </div>
               </div>
             </div>
             <div className="modal-footer">

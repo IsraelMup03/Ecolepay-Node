@@ -49,7 +49,9 @@ export default function RecuVerify() {
         </div>
 
         <div className="receipt-body">
-          <div className="receipt-status-badge">{verified ? 'Reçu valide' : 'Reçu non valide'}</div>
+          <div className={`receipt-status-badge ${verified ? 'valid' : 'invalid'}`}>
+            <i className={`ph-fill ${verified ? 'ph-check-circle' : 'ph-x-circle'}`}></i> {verified ? 'Reçu valide' : 'Reçu non valide'}
+          </div>
           {verified ? (
             <>
               <div className="receipt-meta-row">

@@ -123,7 +123,7 @@ export default function Parametres() {
       </div>
 
       {user.role === 'admin' && (
-        <div className="card" style={{ borderColor: '#fecaca' }}>
+        <div className="card" style={{ borderColor: 'var(--danger-light)' }}>
           <div className="card-header"><i className="ph ph-warning-circle" style={{ color: 'var(--danger)' }}></i><h3 style={{ color: 'var(--danger)' }}>Zone dangereuse</h3></div>
           <div className="card-body">
             <p className="text-muted mb-16">Cette action remet le logiciel à l'état d'un tout premier lancement : élèves, classes, paiements, remboursements, dépenses, historique, corbeille, journal d'activité, tous les comptes utilisateurs (sauf le vôtre), ainsi que le profil de l'école et les paramètres système sont supprimés ou remis à zéro. Elle est irréversible. Tapez <code>CONFIRMER</code> pour activer le bouton.</p>

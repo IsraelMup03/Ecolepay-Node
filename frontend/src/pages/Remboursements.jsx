@@ -82,7 +82,7 @@ export default function Remboursements() {
 
   return (
     <div>
-      <div className="flex-between mb-16">
+      <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div className="text-muted">{rows.length} mouvement(s) de remboursement{viewingAnnee ? ` — ${viewingAnnee}` : ''}</div>
         {!viewingAnnee && <button className="btn btn-accent" onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> Nouvelle demande</button>}
       </div>

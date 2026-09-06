@@ -176,7 +176,7 @@ export default function Comptabilite() {
 
   return (
     <div>
-      <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 10 }}>
+      <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div className="text-muted">Année {resume.annee}{resume.modeHistorique ? ' — lecture seule' : ''}</div>
         <div className="flex gap-8">
           <GenererRapportButton endpoint="/comptabilite/rapport.xlsx" filePrefix="comptabilite" />
@@ -230,7 +230,9 @@ export default function Comptabilite() {
           <div className="card-header"><i className="ph ph-chart-donut"></i><h3>Dépenses par catégorie</h3></div>
           <div className="card-body">
             {pieData.length === 0 ? (
-              <div className="empty-state"><i className="ph ph-chart-donut"></i><h3>Aucune dépense</h3></div>
+              <div className="empty-state" style={{ minHeight: 260, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <i className="ph ph-chart-donut"></i><h3>Aucune dépense</h3>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>

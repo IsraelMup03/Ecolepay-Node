@@ -4,6 +4,7 @@ import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import RowMenu from '../components/RowMenu.jsx';
 
 const STATUT_BADGE = { actif: 'badge-success', suspendu: 'badge-danger', diplome: 'badge-info', transfere: 'badge-default' };
 const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplômé', transfere: 'Transféré' };
@@ -35,6 +36,10 @@ export default function EleveDetail() {
   const [remiseForm, setRemiseForm] = useState('');
   const [remiseError, setRemiseError] = useState('');
   const [remiseSaving, setRemiseSaving] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -147,6 +152,32 @@ export default function EleveDetail() {
     }
   }
 
+  function openEditInfo() {
+    setEditForm({
+      nom: eleve.nom || '', postnom: eleve.postnom || '', prenom: eleve.prenom || '', genre: eleve.genre || 'M',
+      date_naissance: eleve.date_naissance || '', lieu_naissance: eleve.lieu_naissance || '',
+      nom_parent: eleve.nom_parent || '', telephone_parent: eleve.telephone_parent || '', email_parent: eleve.email_parent || '', adresse: eleve.adresse || '',
+    });
+    setEditError('');
+    setShowEditModal(true);
+  }
+
+  async function submitEditInfo(ev) {
+    ev.preventDefault();
+    setEditError('');
+    setEditSaving(true);
+    try {
+      await client.put(`/eleves/${id}`, { ...editForm, statut: eleve.statut });
+      setShowEditModal(false);
+      setMsg('Informations mises à jour.');
+      load();
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   async function archiver() {
     if (!window.confirm("Archiver cet élève ? Il sera déplacé vers la corbeille et pourra être restauré pendant 30 jours.")) return;
     await client.delete(`/eleves/${id}`);
@@ -185,23 +216,55 @@ export default function EleveDetail() {
     <div>
       {msg && <div className="alert alert-info">{msg}</div>}
 
+      <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <button className="btn btn-outline" onClick={() => navigate('/eleves')}><i className="ph ph-arrow-left"></i> Retour aux élèves</button>
+        <div className="flex gap-14" style={{ alignItems: 'center' }}>
+          <div className={eleve.genre === 'F' ? 'genre-f' : 'genre-m'} style={{ width: 44, height: 44, fontSize: 15, flexShrink: 0 }}>{eleve.genre}</div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18 }}>{eleve.prenom} {eleve.postnom ? `${eleve.postnom} ` : ''}{eleve.nom}</h2>
+            <div className="text-muted flex gap-8" style={{ alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
+              <span>{eleve.matricule} · {eleve.classe_nom}{eleve.section_nom ? ` ${eleve.section_nom}` : ''}</span>
+              <span className={`badge ${STATUT_BADGE[eleve.statut] || 'badge-default'}`}>{STATUT_LABELS[eleve.statut] || eleve.statut}</span>
+              {!!eleve.redoublant && <span className="badge badge-warning">Redoublant</span>}
+              {!!eleve.en_attente_orientation && <span className="badge badge-warning" title="Classe pivot : transfert manuel requis"><i className="ph ph-git-fork"></i> En attente de transfert</span>}
+            </div>
+          </div>
+        </div>
+        {!viewingAnnee && (
+          <div className="flex gap-8">
+            <button className="btn btn-accent" onClick={openPaymentModal}><i className="ph ph-money"></i> Enregistrer un paiement</button>
+            <RowMenu>
+              {(close) => (
+                <>
+                  <button onClick={() => { openEditInfo(); close(); }}><i className="ph ph-pencil-simple"></i> Modifier les informations</button>
+                  <div className="row-menu-divider"></div>
+                  {eleve.classe_inf_nom && eleve.statut === 'actif' && (
+                    <button onClick={() => { retrograder(); close(); }}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>
+                  )}
+                  {eleve.statut === 'actif' && user?.role === 'admin' && (
+                    <button onClick={() => { openTransfer(); close(); }}><i className="ph ph-arrows-left-right"></i> Transférer</button>
+                  )}
+                  {(eleve.statut === 'actif' || eleve.statut === 'suspendu') && (
+                    <button onClick={() => { toggleStatut(); close(); }}>
+                      <i className={eleve.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {eleve.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
+                    </button>
+                  )}
+                  {eleve.statut !== 'transfere' && (
+                    <button className="danger" onClick={() => { archiver(); close(); }}><i className="ph ph-archive"></i> Archiver</button>
+                  )}
+                </>
+              )}
+            </RowMenu>
+          </div>
+        )}
+      </div>
+
       <div className="grid-2 mb-16">
         <div className="card">
           <div className="card-header"><i className="ph ph-user"></i><h3>Informations de l'élève</h3></div>
           <div className="card-body">
-            <div className="flex gap-14 mb-16" style={{ alignItems: 'center' }}>
-              <div className={eleve.genre === 'F' ? 'genre-f' : 'genre-m'} style={{ width: 48, height: 48, fontSize: 16 }}>{eleve.genre}</div>
-              <div>
-                <div style={{ fontSize: 17, fontWeight: 700 }}>{eleve.prenom} {eleve.postnom ? `${eleve.postnom} ` : ''}{eleve.nom}</div>
-                <div className="text-muted">{eleve.matricule} · {eleve.classe_nom}{eleve.section_nom ? ` ${eleve.section_nom}` : ''}</div>
-              </div>
-            </div>
             <table>
               <tbody>
-                <tr><td className="text-muted">Statut</td><td>
-                  <span className={`badge ${STATUT_BADGE[eleve.statut] || 'badge-default'}`}>{STATUT_LABELS[eleve.statut] || eleve.statut}</span>
-                  {!!eleve.redoublant && <span className="badge badge-warning" style={{ marginLeft: 6 }}>Redoublant</span>}
-                </td></tr>
                 <tr><td className="text-muted">Date de naissance</td><td>{eleve.date_naissance || '—'}</td></tr>
                 <tr><td className="text-muted">Lieu de naissance</td><td>{eleve.lieu_naissance || '—'}</td></tr>
                 <tr><td className="text-muted">Parent/tuteur</td><td>{eleve.nom_parent || '—'}</td></tr>
@@ -215,20 +278,6 @@ export default function EleveDetail() {
                 </td></tr>
               </tbody>
             </table>
-
-            {!viewingAnnee && (
-              <div className="flex gap-8" style={{ marginTop: 18, flexWrap: 'wrap' }}>
-                <button className="btn btn-outline" onClick={openPaymentModal}><i className="ph ph-money"></i> Enregistrer un paiement</button>
-                {eleve.classe_inf_nom && eleve.statut === 'actif' && <button className="btn btn-warning" onClick={retrograder}><i className="ph ph-arrow-circle-down"></i> Rétrograder</button>}
-                {eleve.statut === 'actif' && user?.role === 'admin' && <button className="btn btn-outline" onClick={openTransfer}><i className="ph ph-arrows-left-right"></i> Transférer</button>}
-                {(eleve.statut === 'actif' || eleve.statut === 'suspendu') && (
-                  <button className="btn btn-outline" onClick={toggleStatut}>
-                    <i className={eleve.statut === 'actif' ? 'ph ph-eye-slash' : 'ph ph-eye'}></i> {eleve.statut === 'actif' ? 'Suspendre' : 'Réactiver'}
-                  </button>
-                )}
-                {eleve.statut !== 'transfere' && <button className="btn btn-danger" onClick={archiver}><i className="ph ph-archive"></i> Archiver</button>}
-              </div>
-            )}
           </div>
         </div>
 
@@ -458,6 +507,58 @@ export default function EleveDetail() {
               <button type="submit" className="btn btn-accent" disabled={remiseSaving}>{remiseSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${showEditModal ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-pencil-simple"></i><h3>Modifier les informations — {eleve.prenom} {eleve.nom}</h3>
+            <button className="modal-close" onClick={() => setShowEditModal(false)}><i className="ph ph-x"></i></button>
+          </div>
+          {editForm && (
+            <form onSubmit={submitEditInfo}>
+              <div className="modal-body">
+                {editError && <div className="alert alert-danger">{editError}</div>}
+                <div className="form-grid">
+                  <div className="form-section-title">Informations de l'élève</div>
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group"><label>Nom *</label><input value={editForm.nom} onChange={(e) => setEditForm({ ...editForm, nom: e.target.value })} required /></div>
+                    <div className="form-group"><label>Post-nom</label><input value={editForm.postnom} onChange={(e) => setEditForm({ ...editForm, postnom: e.target.value })} /></div>
+                  </div>
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group"><label>Prénom *</label><input value={editForm.prenom} onChange={(e) => setEditForm({ ...editForm, prenom: e.target.value })} required /></div>
+                    <div className="form-group">
+                      <label>Genre</label>
+                      <select value={editForm.genre} onChange={(e) => setEditForm({ ...editForm, genre: e.target.value })}>
+                        <option value="M">Masculin</option><option value="F">Féminin</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Classe</label>
+                    <input value={eleve.classe_nom || ''} disabled />
+                    <small className="text-muted">Pour changer de classe, utilisez "Transférer" ou "Rétrograder" depuis le menu "Gérer".</small>
+                  </div>
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group"><label>Date de naissance</label><input type="date" value={editForm.date_naissance} onChange={(e) => setEditForm({ ...editForm, date_naissance: e.target.value })} /></div>
+                    <div className="form-group"><label>Lieu de naissance</label><input value={editForm.lieu_naissance} onChange={(e) => setEditForm({ ...editForm, lieu_naissance: e.target.value })} /></div>
+                  </div>
+                  <div className="form-section-title">Parent / tuteur</div>
+                  <div className="form-group"><label>Nom du parent/tuteur</label><input value={editForm.nom_parent} onChange={(e) => setEditForm({ ...editForm, nom_parent: e.target.value })} /></div>
+                  <div className="form-grid form-grid-2">
+                    <div className="form-group"><label>Téléphone parent</label><input value={editForm.telephone_parent} onChange={(e) => setEditForm({ ...editForm, telephone_parent: e.target.value })} /></div>
+                    <div className="form-group"><label>Email parent</label><input type="email" value={editForm.email_parent} onChange={(e) => setEditForm({ ...editForm, email_parent: e.target.value })} /></div>
+                  </div>
+                  <div className="form-group"><label>Adresse</label><textarea value={editForm.adresse} onChange={(e) => setEditForm({ ...editForm, adresse: e.target.value })} /></div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>Annuler</button>
+                <button type="submit" className="btn btn-accent" disabled={editSaving}>{editSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </div>

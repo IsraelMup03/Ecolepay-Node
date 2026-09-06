@@ -99,7 +99,7 @@ export default function Utilisateurs() {
   return (
     <div>
       {notice && <div className="alert alert-success"><i className="ph ph-info"></i> {notice}</div>}
-      <div className="flex-between mb-16">
+      <div className="flex-between mb-16" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div className="text-muted">{users.length} utilisateur(s)</div>
         <button className="btn btn-accent" onClick={openNew}><i className="ph ph-user-plus"></i> Nouvel utilisateur</button>
       </div>
