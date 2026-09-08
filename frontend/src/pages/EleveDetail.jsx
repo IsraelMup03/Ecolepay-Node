@@ -8,6 +8,8 @@ import RowMenu from '../components/RowMenu.jsx';
 
 const STATUT_BADGE = { actif: 'badge-success', suspendu: 'badge-danger', diplome: 'badge-info', transfere: 'badge-default' };
 const STATUT_LABELS = { actif: 'Actif', suspendu: 'Suspendu', diplome: 'Diplômé', transfere: 'Transféré' };
+const PAIEMENT_STATUT_LABELS = { valide: 'Valide', rembourse: 'Remboursé', annule: 'Annulé', partiel: 'Partiel' };
+const PAIEMENT_STATUT_BADGE = { valide: 'badge-success', rembourse: 'badge-danger', annule: 'badge-default' };
 
 const PAIEMENT_FORM_INIT = { montant: '', devise: 'USD', type_paiement: 'scolarite', mode_paiement: 'especes', periode: '', description: '' };
 
@@ -40,6 +42,10 @@ export default function EleveDetail() {
   const [editForm, setEditForm] = useState(null);
   const [editError, setEditError] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [annulerCible, setAnnulerCible] = useState(null);
+  const [annulerMotif, setAnnulerMotif] = useState('');
+  const [annulerError, setAnnulerError] = useState('');
+  const [annulerSaving, setAnnulerSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -81,6 +87,10 @@ export default function EleveDetail() {
         periode: paymentForm.periode,
         description: paymentForm.description,
       });
+      // Ferme le formulaire et laisse place a une petite fenetre de confirmation dediee :
+      // si le formulaire restait ouvert avec juste un message de succes, un clic reflexe sur
+      // "Valider le paiement" (avant meme d'avoir vu le message) l'enregistrerait une 2e fois.
+      setShowPaymentModal(false);
       setPaymentSuccess(res.data);
       load();
       if (res.data.surplus) {
@@ -182,6 +192,28 @@ export default function EleveDetail() {
     if (!window.confirm("Archiver cet élève ? Il sera déplacé vers la corbeille et pourra être restauré pendant 30 jours.")) return;
     await client.delete(`/eleves/${id}`);
     navigate('/eleves');
+  }
+
+  function openAnnuler(p) {
+    setAnnulerCible(p);
+    setAnnulerMotif('');
+    setAnnulerError('');
+  }
+
+  async function submitAnnuler(ev) {
+    ev.preventDefault();
+    setAnnulerError('');
+    setAnnulerSaving(true);
+    try {
+      await client.post(`/paiements/${annulerCible.id}/annuler`, { motif: annulerMotif });
+      setAnnulerCible(null);
+      setMsg('Paiement annulé.');
+      load();
+    } catch (err) {
+      setAnnulerError(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setAnnulerSaving(false);
+    }
   }
 
   async function marquerSurplusRendu(paiementId) {
@@ -339,7 +371,7 @@ export default function EleveDetail() {
                   <td><code>{p.reference}</code></td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
                   <td>
-                    <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                    <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
                     {p.montant_rembourse_usd > 0 && (
                       <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                     )}
@@ -353,10 +385,15 @@ export default function EleveDetail() {
                     )}
                   </td>
                   <td>{p.mode_paiement}</td>
-                  <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
+                  <td><span className={`badge ${PAIEMENT_STATUT_BADGE[p.statut] || 'badge-default'}`} title={p.statut === 'annule' && p.motif_annulation ? p.motif_annulation : undefined}>{PAIEMENT_STATUT_LABELS[p.statut] || p.statut}</span></td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
-                  <td><button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')}><i className="ph ph-printer"></i></button></td>
+                  <td className="flex gap-8">
+                    <button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')} title="Imprimer le reçu"><i className="ph ph-printer"></i></button>
+                    {p.statut === 'valide' && !viewingAnnee && (
+                      <button className="btn btn-outline btn-sm" style={{ color: 'var(--danger)', borderColor: 'var(--danger-light)' }} onClick={() => openAnnuler(p)} title="Annuler ce paiement"><i className="ph ph-x-circle"></i></button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -372,14 +409,6 @@ export default function EleveDetail() {
           </div>
           <div className="modal-body">
             {paymentError && <div className="alert alert-danger"><i className="ph ph-warning-circle"></i> {paymentError}</div>}
-            {paymentSuccess && (
-              <div className="alert alert-success">
-                <i className="ph ph-check"></i> Paiement enregistré ! Réf: {paymentSuccess.reference}
-                <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.open(`/recu/${paymentSuccess.id}`, '_blank')}>
-                  <i className="ph ph-printer"></i> Imprimer le reçu
-                </button>
-              </div>
-            )}
             <div className="text-muted mb-16">Scolarité : {format(totaux.totalPayeScolarite)} / {format(eleve.frais_scolarite_total)} — Reste {format(totaux.resteScolarite)}</div>
             <form onSubmit={submitPayment}>
               <div className="form-grid">
@@ -447,6 +476,22 @@ export default function EleveDetail() {
                 <button type="submit" className="btn btn-accent" disabled={paying || (besoinSection && !paymentSectionId)}>{paying ? 'Enregistrement...' : <><i className="ph ph-check-circle"></i> Valider le paiement</>}</button>
               </div>
             </form>
+          </div>
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${paymentSuccess ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setPaymentSuccess(null)}>
+        <div className="modal" style={{ maxWidth: 380 }}>
+          <div className="modal-body text-center" style={{ padding: '32px 28px' }}>
+            <i className="ph-fill ph-check-circle" style={{ fontSize: 48, color: 'var(--success)' }}></i>
+            <h3 style={{ marginTop: 14, marginBottom: 4 }}>Paiement enregistré</h3>
+            <p className="text-muted" style={{ marginBottom: 22 }}>Référence : <code>{paymentSuccess?.reference}</code></p>
+            <div className="flex gap-8" style={{ justifyContent: 'center' }}>
+              <button className="btn btn-outline" onClick={() => setPaymentSuccess(null)}>Fermer</button>
+              <button className="btn btn-accent" onClick={() => window.open(`/recu/${paymentSuccess?.id}`, '_blank')}>
+                <i className="ph ph-printer"></i> Imprimer le reçu
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -559,6 +604,31 @@ export default function EleveDetail() {
               </div>
             </form>
           )}
+        </div>
+      </div>
+
+      <div className={`modal-backdrop ${annulerCible ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setAnnulerCible(null)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-x-circle"></i><h3>Annuler le paiement {annulerCible?.reference}</h3>
+            <button className="modal-close" onClick={() => setAnnulerCible(null)}><i className="ph ph-x"></i></button>
+          </div>
+          <form onSubmit={submitAnnuler}>
+            <div className="modal-body">
+              {annulerError && <div className="alert alert-danger">{annulerError}</div>}
+              <p className="text-muted">
+                {annulerCible && format(annulerCible.montant_usd)}. Ce paiement ne comptera plus dans aucun total (tableau de bord, comptabilité, situation financière de l'élève...). Un administrateur pourra le restaurer depuis la Corbeille en cas d'erreur.
+              </p>
+              <div className="form-group">
+                <label>Motif de l'annulation *</label>
+                <textarea value={annulerMotif} onChange={(e) => setAnnulerMotif(e.target.value)} placeholder="Ex: paiement enregistré deux fois par erreur" required />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setAnnulerCible(null)}>Fermer</button>
+              <button type="submit" className="btn btn-danger" disabled={annulerSaving}>{annulerSaving ? 'Annulation...' : 'Annuler le paiement'}</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

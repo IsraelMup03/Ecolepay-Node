@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
-const { genererReferencePaiement, logActivite, getEcole, getParam } = require('../utils/helpers');
+const { genererReferencePaiement, logActivite, getEcole, getParam, envoyerCorbeille } = require('../utils/helpers');
 const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
 
 const router = express.Router();
@@ -303,6 +303,38 @@ router.post('/', requirePermission('paiements'), async (req, res) => {
   }
 });
 
+// POST /api/paiements/:id/annuler  { motif }
+// Distinct du remboursement (qui suppose une demande + approbation admin pour rendre de
+// l'argent a une famille) : sert a corriger immediatement une erreur de saisie (double
+// enregistrement par inadvertance, mauvais montant/eleve...). Comme pour un remboursement
+// total, faire passer statut hors de 'valide' suffit a exclure le paiement de tous les
+// calculs (total paye, reste, tableau de bord, comptabilite...) sans toucher une seule
+// requete d'agregation ailleurs dans l'application.
+router.post('/:id/annuler', requirePermission('paiements'), async (req, res) => {
+  const { id } = req.params;
+  const motif = (req.body.motif || '').trim();
+  if (!motif) return res.status(400).json({ error: "Veuillez indiquer le motif de l'annulation." });
+
+  const [[p]] = await db.query('SELECT * FROM paiements WHERE id=?', [id]);
+  if (!p) return res.status(404).json({ error: 'Paiement introuvable.' });
+  if (p.statut !== 'valide') return res.status(400).json({ error: "Ce paiement n'est plus valide (déjà annulé ou remboursé)." });
+
+  // Snapshot AVANT modification : la Corbeille doit pouvoir restaurer l'etat exact d'origine
+  // (notamment son propre surplus_rembourse, ecrase juste en dessous) si l'annulation
+  // s'averait elle-meme etre une erreur.
+  await envoyerCorbeille('paiements', p, req.user.id);
+
+  // Un surplus encore detenu sur ce paiement n'a plus de sens une fois le paiement lui-meme
+  // annule : on le marque rendu pour qu'il n'apparaisse plus dans la liste des remboursements
+  // en attente (rien n'est reellement du puisque la transaction est effacee des calculs).
+  await db.query(
+    "UPDATE paiements SET statut='annule', motif_annulation=?, annule_par=?, surplus_rembourse=1 WHERE id=?",
+    [motif, req.user.id, id]
+  );
+  await logActivite(req.user.id, 'Paiement annule', `Ref:${p.reference} Motif:${motif}`, req.ip);
+  res.json({ success: true });
+});
+
 // POST /api/paiements/:id/surplus-rembourse  (marque le surplus d'une transaction comme rendu)
 router.post('/:id/surplus-rembourse', requirePermission('paiements'), async (req, res) => {
   const { id } = req.params;
@@ -314,5 +346,6 @@ router.post('/:id/surplus-rembourse', requirePermission('paiements'), async (req
   await logActivite(req.user.id, 'Surplus rendu', `Paiement ID:${id} - ${p.montant_surplus} USD`, req.ip);
   res.json({ success: true });
 });
+
 
 module.exports = router;

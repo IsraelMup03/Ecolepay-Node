@@ -148,7 +148,7 @@ export default function Caisse() {
                         <td>{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
                         <td>
-                          <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                          <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
                           {p.montant_rembourse_usd > 0 && (
                             <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                           )}

@@ -37,6 +37,29 @@ router.post('/:id/restaurer', async (req, res) => {
     return res.json({ success: true, message: 'Eleve restaure avec succes.' });
   }
 
+  if (item.table_source === 'eleves_suspendu') {
+    // Meme mecanique que "eleves" (l'archivage) ci-dessus : la ligne n'a jamais quitte la
+    // table, on remet juste le statut a 'actif'. Table_source distinct uniquement pour que
+    // la Corbeille affiche "Élève suspendu" plutot que "Élève archivé".
+    await db.query("UPDATE eleves SET statut='actif' WHERE id=?", [data.id]);
+    await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);
+    await logActivite(req.user.id, 'Eleve reactive (via corbeille)', `Corbeille ID:${id}`, req.ip);
+    return res.json({ success: true, message: 'Élève réactivé.' });
+  }
+
+  if (item.table_source === 'paiements') {
+    // L'annulation d'un paiement est elle aussi un changement de statut, jamais un vrai
+    // DELETE : on restaure l'etat exact d'avant l'annulation depuis le snapshot (y compris
+    // son propre surplus_rembourse, qui avait ete force a 1 au moment de l'annulation).
+    await db.query(
+      "UPDATE paiements SET statut='valide', motif_annulation=NULL, annule_par=NULL, surplus_rembourse=? WHERE id=?",
+      [data.surplus_rembourse, data.id]
+    );
+    await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);
+    await logActivite(req.user.id, 'Paiement restaure (via corbeille)', `Corbeille ID:${id}`, req.ip);
+    return res.json({ success: true, message: 'Paiement restauré (à nouveau valide).' });
+  }
+
   if (item.table_source === 'classes') {
     await db.query('UPDATE classes SET actif=1 WHERE id=?', [data.id]);
     await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);

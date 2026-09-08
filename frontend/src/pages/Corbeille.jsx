@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 
-const TABLE_LABELS = { eleves: 'Élève', classes: 'Classe', utilisateurs: 'Utilisateur', depenses: 'Dépense' };
+const TABLE_LABELS = {
+  eleves: 'Élève archivé', eleves_suspendu: 'Élève suspendu', classes: 'Classe', utilisateurs: 'Utilisateur',
+  depenses: 'Dépense', recettes_diverses: 'Recette diverse', paiements: 'Paiement annulé',
+};
 
 export default function Corbeille() {
   const { viewingAnnee } = useAnnee();
@@ -32,10 +35,12 @@ export default function Corbeille() {
   function apercu(item) {
     try {
       const d = JSON.parse(item.donnees);
-      if (item.table_source === 'eleves') return `${d.prenom} ${d.nom} (${d.matricule})`;
+      if (item.table_source === 'eleves' || item.table_source === 'eleves_suspendu') return `${d.prenom} ${d.nom} (${d.matricule})`;
       if (item.table_source === 'classes') return d.nom;
       if (item.table_source === 'utilisateurs') return `${d.prenom} ${d.nom} — ${d.email}`;
       if (item.table_source === 'depenses') return `${d.reference} — ${d.beneficiaire || d.categorie} (${d.montant} ${d.devise})`;
+      if (item.table_source === 'recettes_diverses') return `${d.reference} — ${d.provenance || d.categorie} (${d.montant} ${d.devise})`;
+      if (item.table_source === 'paiements') return `${d.reference} — ${d.montant} ${d.devise}`;
       return '—';
     } catch (e) { return '—'; }
   }

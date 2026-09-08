@@ -4,6 +4,8 @@ import client from '../api/client.js';
 import { API_URL } from '../api/client.js';
 import { useDevise } from '../context/DeviseContext.jsx';
 
+const STATUT_LABELS = { valide: 'Valide', rembourse: 'Remboursé', annule: 'Annulé', partiel: 'Partiel' };
+
 export default function Recu() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -40,11 +42,16 @@ export default function Recu() {
         </div>
 
         <div className="receipt-body">
+          {p.statut !== 'valide' && (
+            <div className="receipt-cancel-banner">
+              <i className="ph-fill ph-warning"></i> Paiement {STATUT_LABELS[p.statut] || p.statut} — non valable comme preuve de paiement
+            </div>
+          )}
           <div className="receipt-top-grid">
             <div>
               <div className="receipt-meta-row-item"><strong>Référence :</strong> {p.reference}</div>
               <div className="receipt-meta-row-item"><strong>Date :</strong> {new Date(p.date_paiement).toLocaleString('fr-FR')}</div>
-              <div className="receipt-meta-row-item"><strong>Statut :</strong> {p.statut}</div>
+              <div className="receipt-meta-row-item"><strong>Statut :</strong> {STATUT_LABELS[p.statut] || p.statut}</div>
             </div>
           </div>
 

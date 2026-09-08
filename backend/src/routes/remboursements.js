@@ -33,7 +33,7 @@ router.get('/', requirePermission('remboursements'), async (req, res) => {
             p.date_paiement, p.annee_scolaire,
             e.nom, e.prenom, e.matricule, c.nom as classe
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
-     WHERE p.annee_scolaire=? AND p.montant_surplus>0
+     WHERE p.annee_scolaire=? AND p.montant_surplus>0 AND p.statut='valide'
      ORDER BY p.date_paiement DESC`,
     [anneeFiltre]
   );

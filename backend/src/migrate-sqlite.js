@@ -300,6 +300,8 @@ async function main() {
   await ensureColumn(db, 'eleves', 'remise_pourcentage', 'NUMERIC DEFAULT 0');
   await ensureColumn(db, 'eleves', 'en_attente_orientation', 'INTEGER DEFAULT 0');
   await ensureColumn(db, 'classes', 'est_pivot', 'INTEGER DEFAULT 0');
+  await ensureColumn(db, 'paiements', 'motif_annulation', 'TEXT');
+  await ensureColumn(db, 'paiements', 'annule_par', 'INTEGER REFERENCES utilisateurs(id)');
 
   console.log('Insertion des donnees de base...');
   // "INSERT OR IGNORE" ne protege que contre un conflit sur une colonne UNIQUE/PK -- ici

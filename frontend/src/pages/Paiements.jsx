@@ -3,6 +3,9 @@ import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
 
+const STATUT_LABELS = { valide: 'Valide', rembourse: 'Remboursé', annule: 'Annulé', partiel: 'Partiel' };
+const STATUT_BADGE = { valide: 'badge-success', rembourse: 'badge-danger', annule: 'badge-default' };
+
 export default function Paiements() {
   const { viewingAnnee } = useAnnee();
   const { format, devise } = useDevise();
@@ -17,6 +20,10 @@ export default function Paiements() {
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ total: 0, somme: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
+  const [annulerCible, setAnnulerCible] = useState(null);
+  const [annulerMotif, setAnnulerMotif] = useState('');
+  const [annulerError, setAnnulerError] = useState('');
+  const [annulerSaving, setAnnulerSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -31,6 +38,27 @@ export default function Paiements() {
 
   useEffect(() => { client.get('/classes').then((r) => setClasses(r.data)); }, []);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, classeId, debut, fin, type, statut, page, viewingAnnee]);
+
+  function openAnnuler(p) {
+    setAnnulerCible(p);
+    setAnnulerMotif('');
+    setAnnulerError('');
+  }
+
+  async function submitAnnuler(e) {
+    e.preventDefault();
+    setAnnulerError('');
+    setAnnulerSaving(true);
+    try {
+      await client.post(`/paiements/${annulerCible.id}/annuler`, { motif: annulerMotif });
+      setAnnulerCible(null);
+      load();
+    } catch (err) {
+      setAnnulerError(err.response?.data?.error || 'Erreur.');
+    } finally {
+      setAnnulerSaving(false);
+    }
+  }
 
   function exportCsv() {
     const token = localStorage.getItem('ecolepay_token');
@@ -81,6 +109,7 @@ export default function Paiements() {
           <select value={statut} onChange={(e) => { setStatut(e.target.value); setPage(1); }}>
             <option value="valide">Valides</option>
             <option value="rembourse">Remboursés</option>
+            <option value="annule">Annulés</option>
             <option value="tous">Tous statuts</option>
           </select>
         </div>
@@ -118,7 +147,7 @@ export default function Paiements() {
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
                   <td>
-                    <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                    <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
                     {p.montant_rembourse_usd > 0 && (
                       <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                     )}
@@ -126,11 +155,16 @@ export default function Paiements() {
                       <div style={{ fontSize: 11, color: 'var(--warning)' }}><i className="ph ph-warning"></i> Surplus de {format(p.montant_surplus)} à rendre</div>
                     )}
                   </td>
-                  <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
+                  <td><span className={`badge ${STATUT_BADGE[p.statut] || 'badge-default'}`} title={p.statut === 'annule' && p.motif_annulation ? p.motif_annulation : undefined}>{STATUT_LABELS[p.statut] || p.statut}</span></td>
                   <td>{p.mode_paiement}</td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
-                  <td><button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')}><i className="ph ph-printer"></i></button></td>
+                  <td className="flex gap-8">
+                    <button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')} title="Imprimer le reçu"><i className="ph ph-printer"></i></button>
+                    {p.statut === 'valide' && !viewingAnnee && (
+                      <button className="btn btn-outline btn-sm" style={{ color: 'var(--danger)', borderColor: 'var(--danger-light)' }} onClick={() => openAnnuler(p)} title="Annuler ce paiement"><i className="ph ph-x-circle"></i></button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -143,6 +177,32 @@ export default function Paiements() {
             <button className="btn btn-outline btn-sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>Suivant</button>
           </div>
         )}
+      </div>
+
+      <div className={`modal-backdrop ${annulerCible ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && setAnnulerCible(null)}>
+        <div className="modal">
+          <div className="modal-header">
+            <i className="ph ph-x-circle"></i><h3>Annuler le paiement {annulerCible?.reference}</h3>
+            <button className="modal-close" onClick={() => setAnnulerCible(null)}><i className="ph ph-x"></i></button>
+          </div>
+          <form onSubmit={submitAnnuler}>
+            <div className="modal-body">
+              {annulerError && <div className="alert alert-danger">{annulerError}</div>}
+              <p className="text-muted">
+                {annulerCible?.prenom} {annulerCible?.nom} — {annulerCible && format(annulerCible.montant_usd)}.
+                Ce paiement ne comptera plus dans aucun total (tableau de bord, comptabilité, fiche de l'élève...). Un administrateur pourra le restaurer depuis la Corbeille en cas d'erreur.
+              </p>
+              <div className="form-group">
+                <label>Motif de l'annulation *</label>
+                <textarea value={annulerMotif} onChange={(e) => setAnnulerMotif(e.target.value)} placeholder="Ex: paiement enregistré deux fois par erreur" required />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setAnnulerCible(null)}>Fermer</button>
+              <button type="submit" className="btn btn-danger" disabled={annulerSaving}>{annulerSaving ? 'Annulation...' : 'Annuler le paiement'}</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

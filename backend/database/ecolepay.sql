@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS `paiements` (
   `mode_paiement` enum('especes','mobile_money','virement','cheque') DEFAULT 'especes',
   `statut` enum('valide','rembourse','annule','partiel') DEFAULT 'valide',
   `motif_remboursement` text DEFAULT NULL,
+  `motif_annulation` text DEFAULT NULL,
+  `annule_par` int(11) DEFAULT NULL,
   `date_paiement` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `periode` varchar(30) DEFAULT NULL COMMENT 'Ex: Septembre 2024, Trimestre 1',
   `description` text DEFAULT NULL,
@@ -212,7 +214,8 @@ CREATE TABLE IF NOT EXISTS `paiements` (
   KEY `idx_paiements_annee_statut_type` (`annee_scolaire`,`statut`,`type_paiement`),
   KEY `idx_paiements_date` (`date_paiement`),
   CONSTRAINT `fk_paiement_eleve` FOREIGN KEY (`eleve_id`) REFERENCES `eleves` (`id`),
-  CONSTRAINT `fk_paiement_comptable` FOREIGN KEY (`comptable_id`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_paiement_comptable` FOREIGN KEY (`comptable_id`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_paiement_annule_par` FOREIGN KEY (`annule_par`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

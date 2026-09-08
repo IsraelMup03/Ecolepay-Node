@@ -380,6 +380,24 @@ router.put('/:id/statut', requirePermission('eleves'), async (req, res) => {
   if (!['actif', 'suspendu'].includes(statut)) {
     return res.status(400).json({ error: 'Statut invalide.' });
   }
+  if (statut === 'suspendu') {
+    // Visible dans la Corbeille comme toute autre mise a l'ecart, avec une possibilite de
+    // restauration a froid par un administrateur -- meme mecanisme que l'archivage, sous un
+    // table_source distinct ('eleves_suspendu') pour que la Corbeille l'affiche clairement
+    // comme une suspension et non un archivage.
+    const [[data]] = await db.query('SELECT * FROM eleves WHERE id=?', [id]);
+    if (data) await envoyerCorbeille('eleves_suspendu', data, req.user.id);
+  } else {
+    // Reactivation directe (hors Corbeille, via le bouton "Reactiver" habituel) : toute
+    // entree de corbeille encore en attente pour cet eleve est marquee restauree, sinon elle
+    // resterait affichee alors que la situation est deja resolue.
+    const [enAttente] = await db.query("SELECT id, donnees FROM corbeille WHERE table_source='eleves_suspendu' AND restaure=0");
+    for (const r of enAttente) {
+      try {
+        if (JSON.parse(r.donnees).id === Number(id)) await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [r.id]);
+      } catch (e) { /* entree corrompue, ignoree */ }
+    }
+  }
   await db.query('UPDATE eleves SET statut=? WHERE id=?', [statut, id]);
   await logActivite(req.user.id, 'Statut eleve modifie', `ID:${id} -> ${statut}`, req.ip);
   res.json({ success: true });
