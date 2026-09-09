@@ -71,7 +71,7 @@ export default function Rapports() {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
           </select>
         </div>
-        {!viewingAnnee && <div style={{ marginLeft: 'auto' }}><GenererRapportButton /></div>}
+        {!viewingAnnee && <div style={{ marginLeft: 'auto' }}><GenererRapportButton classeId={classeId} /></div>}
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>

@@ -3,13 +3,15 @@ import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { useAlertes } from '../context/AlertesContext.jsx';
 
 const STATUT_LABELS = { en_attente: 'En attente', approuve: 'Approuvé', rejete: 'Rejeté', rendu: 'Rendu' };
 
 export default function Remboursements() {
   const { user, hasPermission } = useAuth();
   const { viewingAnnee } = useAnnee();
-  const { format } = useDevise();
+  const { format, formatOriginal } = useDevise();
+  const { refreshAlertes } = useAlertes();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -47,6 +49,7 @@ export default function Remboursements() {
       setShowModal(false);
       setRefPaiement(''); setPaiementTrouve(null); setMotif(''); setMontant('');
       load();
+      refreshAlertes();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur.');
     } finally {
@@ -59,6 +62,7 @@ export default function Remboursements() {
     try {
       await client.post(`/remboursements/${id}/approuver`);
       load();
+      refreshAlertes();
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur.');
     }
@@ -67,12 +71,14 @@ export default function Remboursements() {
     if (!window.confirm('Rejeter cette demande de remboursement ?')) return;
     await client.post(`/remboursements/${id}/rejeter`);
     load();
+    refreshAlertes();
   }
   async function marquerRendu(r) {
-    if (!window.confirm(`Confirmer que ce surplus de ${format(r.montant_usd)} a bien été rendu au parent/tuteur ?`)) return;
+    if (!window.confirm(`Confirmer que ce surplus de ${formatOriginal(r)} a bien été rendu au parent/tuteur ?`)) return;
     try {
       await client.post(`/paiements/${r.paiement_id}/surplus-rembourse`);
       load();
+      refreshAlertes();
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur.');
     }
@@ -100,7 +106,7 @@ export default function Remboursements() {
                   <td><span className={`badge ${r.type === 'surplus' ? 'badge-warning' : 'badge-info'}`}>{r.type === 'surplus' ? 'Surplus' : 'Remboursement'}</span></td>
                   <td>{r.prenom} {r.nom} <span className="text-muted">({r.matricule})</span></td>
                   <td><code>{r.pay_ref}</code></td>
-                  <td><strong>{format(r.montant_usd)}</strong></td>
+                  <td><strong>{formatOriginal(r)}</strong></td>
                   <td className="text-muted">{r.motif}</td>
                   <td><span className={`badge ${r.statut === 'approuve' || r.statut === 'rendu' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{STATUT_LABELS[r.statut] || r.statut}</span></td>
                   <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
@@ -141,7 +147,7 @@ export default function Remboursements() {
                 {paiementTrouve && (
                   <>
                     <div className="alert alert-info">
-                      {paiementTrouve.prenom} {paiementTrouve.nom} ({paiementTrouve.matricule}) — payé {format(paiementTrouve.montant_usd)}
+                      {paiementTrouve.prenom} {paiementTrouve.nom} ({paiementTrouve.matricule}) — payé {formatOriginal(paiementTrouve)}
                     </div>
                     <div className="form-group">
                       <label>Montant à rembourser *</label>

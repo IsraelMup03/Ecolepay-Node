@@ -144,6 +144,44 @@ function addTable(sheet, startRow, columns, rows, options = {}) {
   return nextRow + 1;
 }
 
+/**
+ * Texte "montant reellement saisi" pour une ligne de detail (paiement/depense/recette) --
+ * a placer dans une colonne texte a cote de la colonne "Montant" (qui elle reste dans la
+ * devise choisie pour l'export entier) : la colonne native, elle, ne depend d'aucun taux ni
+ * devise de rapport, c'est simplement ce que l'utilisateur a tape.
+ */
+function montantSaisiTexte(row) {
+  const estCdf = row.devise === 'CDF';
+  const val = parseFloat(row.montant) || 0;
+  const txt = val.toLocaleString('fr-FR', { minimumFractionDigits: estCdf ? 0 : 2, maximumFractionDigits: estCdf ? 0 : 2 });
+  return `${txt} ${estCdf ? 'FC' : (row.devise || 'USD')}`;
+}
+
+/**
+ * Ecrit, sous un total deja affiche, la repartition par devise reellement saisie -- deux
+ * lignes ("Dont saisi en USD", "Dont saisi en FC (equivalent USD)") dans le meme style que
+ * les titres de section (addSectionTitle). N'ecrit RIEN et renvoie `row` inchange si le total
+ * n'est pas reellement mixte (une des deux devises absente), pour ne pas alourdir le cas
+ * courant d'une ecole qui n'utilise qu'une devise. `parDevise` = { usd, cdf, cdfEnUsd }
+ * (montants NATIFS, voir la meme convention cote frontend/formatRepartition()).
+ */
+function addRepartitionDevise(sheet, row, numCols, parDevise, label) {
+  if (!parDevise || !(parDevise.usd > 0) || !(parDevise.cdf > 0)) return row;
+  const prefix = label ? `${label} — ` : '';
+  const lastCol = String.fromCharCode(64 + numCols);
+  let r = row;
+  sheet.mergeCells(`A${r}:${lastCol}${r}`);
+  let cell = sheet.getCell(`A${r}`);
+  cell.value = `${prefix}Dont saisi en USD : ${parDevise.usd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+  cell.font = { italic: true, size: 10, color: { argb: 'FF6B7A75' } };
+  r += 1;
+  sheet.mergeCells(`A${r}:${lastCol}${r}`);
+  cell = sheet.getCell(`A${r}`);
+  cell.value = `${prefix}Dont saisi en FC : ${parDevise.cdf.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FC (≈ ${parDevise.cdfEnUsd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`;
+  cell.font = { italic: true, size: 10, color: { argb: 'FF6B7A75' } };
+  return r + 1;
+}
+
 function addSectionTitle(sheet, row, text, numCols) {
   const lastCol = String.fromCharCode(64 + numCols);
   sheet.mergeCells(`A${row}:${lastCol}${row}`);
@@ -161,4 +199,4 @@ async function sendWorkbook(res, workbook, filename) {
   res.end();
 }
 
-module.exports = { newWorkbook, addLetterhead, addTable, addSectionTitle, sendWorkbook, deviseLabel, COLOR_PRIMARY, COLOR_PRIMARY_LIGHT, COLOR_ACCENT };
+module.exports = { newWorkbook, addLetterhead, addTable, addSectionTitle, addRepartitionDevise, montantSaisiTexte, sendWorkbook, deviseLabel, COLOR_PRIMARY, COLOR_PRIMARY_LIGHT, COLOR_ACCENT };

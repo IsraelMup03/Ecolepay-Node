@@ -7,6 +7,23 @@ const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils
 const router = express.Router();
 router.use(requireAuth);
 
+// Partitionne un tableau de paiements deja filtre par devise reellement saisie : usd/cdf
+// sont les montants NATIFS (ce qui a ete tape), cdfEnUsd est l'equivalent USD de la part
+// CDF -- se recombinent toujours exactement au total deja calcule ailleurs (memes lignes,
+// juste reparties), pour afficher "900 USD, 220 000 FC (≈100 USD)" sous un total mixte.
+function partitionParDevise(paiements) {
+  let usd = 0, cdf = 0, cdfEnUsd = 0;
+  for (const p of paiements) {
+    if ((p.devise || 'USD') === 'CDF') {
+      cdf += parseFloat(p.montant) || 0;
+      cdfEnUsd += parseFloat(p.montant_usd) || 0;
+    } else {
+      usd += parseFloat(p.montant_usd || p.montant) || 0;
+    }
+  }
+  return { usd, cdf, cdfEnUsd };
+}
+
 // Progression de la scolarite d'un eleve, tranche par tranche (voir classe_tranches) :
 // aucun paiement n'est jamais rattache a une tranche precise en base -- l'argent recu
 // remplit les tranches dans l'ordre, comme le fait deja le mecanisme de surplus. Chaque
@@ -245,8 +262,12 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
   const anneeCible = modeHistorique ? annee : eleve.annee_scolaire;
   const paiements = tousPaiements.filter((p) => p.annee_scolaire === anneeCible);
 
-  const totalPayeScolarite = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'scolarite').reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
-  const totalPayeInscription = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'inscription').reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
+  const paiementsScolariteValides = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'scolarite');
+  const paiementsInscriptionValides = paiements.filter((p) => p.statut === 'valide' && p.type_paiement === 'inscription');
+  const totalPayeScolarite = paiementsScolariteValides.reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
+  const totalPayeInscription = paiementsInscriptionValides.reduce((s, p) => s + parseFloat(p.montant_usd || p.montant), 0);
+  const totalPayeScolariteParDevise = partitionParDevise(paiementsScolariteValides);
+  const totalPayeInscriptionParDevise = partitionParDevise(paiementsInscriptionValides);
   // Inclut les remboursements totaux ET partiels (un paiement partiellement rembourse reste
   // statut='valide', seul son montant net diminue -- se fier au seul statut='rembourse'
   // ignorait tous les remboursements partiels et affichait toujours 0.
@@ -277,7 +298,10 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
 
   res.json({
     eleve, paiements, modeHistorique, sectionsDisponibles, tranches,
-    totaux: { totalPayeScolarite, totalPayeInscription, totalRembourse, totalSurplusNonRendu, resteScolarite, resteInscription, pctScolarite },
+    totaux: {
+      totalPayeScolarite, totalPayeInscription, totalRembourse, totalSurplusNonRendu, resteScolarite, resteInscription, pctScolarite,
+      totalPayeScolariteParDevise, totalPayeInscriptionParDevise,
+    },
   });
 });
 
@@ -295,6 +319,15 @@ router.get('/:id/caisse-info', requireAnyPermission('paiements', 'eleves'), asyn
   if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
   eleve.reste_scolarite = Math.max(0, eleve.frais_scolarite_total - eleve.total_paye_scolarite);
   eleve.reste_inscription = Math.max(0, eleve.frais_inscription_total - eleve.total_paye_inscription);
+
+  const [[repartScolarite]] = await db.query(
+    `SELECT COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='USD' THEN montant_usd ELSE 0 END),0) as usd,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='CDF' THEN montant ELSE 0 END),0) as cdf,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='CDF' THEN montant_usd ELSE 0 END),0) as cdfEnUsd
+     FROM paiements WHERE eleve_id=? AND statut='valide' AND type_paiement='scolarite' AND annee_scolaire=?`,
+    [id, eleve.annee_scolaire]
+  );
+  eleve.total_paye_scolarite_par_devise = { usd: parseFloat(repartScolarite.usd) || 0, cdf: parseFloat(repartScolarite.cdf) || 0, cdfEnUsd: parseFloat(repartScolarite.cdfEnUsd) || 0 };
 
   // Sections disponibles pour cette classe, seulement utile si l'eleve n'en a pas encore
   // (Caisse.jsx doit alors imposer un choix avant le premier paiement scolarite/inscription).

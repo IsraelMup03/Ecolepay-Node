@@ -8,7 +8,7 @@ const STATUT_BADGE = { valide: 'badge-success', rembourse: 'badge-danger', annul
 
 export default function Paiements() {
   const { viewingAnnee } = useAnnee();
-  const { format, devise } = useDevise();
+  const { format, formatOriginal, formatRepartition, devise } = useDevise();
   const [rows, setRows] = useState([]);
   const [classes, setClasses] = useState([]);
   const [q, setQ] = useState('');
@@ -129,7 +129,11 @@ export default function Paiements() {
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><i className="ph ph-currency-circle-dollar"></i></div>
-          <div className="stat-info"><div className="label">Montant total</div><div className="value">{format(meta.somme)}</div></div>
+          <div className="stat-info">
+            <div className="label">Montant total</div>
+            <div className="value">{format(meta.somme)}</div>
+            {formatRepartition(meta.sommeParDevise) && <div className="sub">{formatRepartition(meta.sommeParDevise)}</div>}
+          </div>
         </div>
       </div>
 
@@ -147,7 +151,7 @@ export default function Paiements() {
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
                   <td>
-                    <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                    <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{formatOriginal(p)}</strong>
                     {p.montant_rembourse_usd > 0 && (
                       <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                     )}
@@ -189,7 +193,7 @@ export default function Paiements() {
             <div className="modal-body">
               {annulerError && <div className="alert alert-danger">{annulerError}</div>}
               <p className="text-muted">
-                {annulerCible?.prenom} {annulerCible?.nom} — {annulerCible && format(annulerCible.montant_usd)}.
+                {annulerCible?.prenom} {annulerCible?.nom} — {annulerCible && formatOriginal(annulerCible)}.
                 Ce paiement ne comptera plus dans aucun total (tableau de bord, comptabilité, fiche de l'élève...). Un administrateur pourra le restaurer depuis la Corbeille en cas d'erreur.
               </p>
               <div className="form-group">

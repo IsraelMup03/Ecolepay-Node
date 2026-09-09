@@ -9,7 +9,7 @@ import GenererRapportButton from '../components/GenererRapportButton.jsx';
 
 export default function Dashboard() {
   const { viewingAnnee } = useAnnee();
-  const { format, convert } = useDevise();
+  const { format, formatOriginal, formatRepartition, convert } = useDevise();
   const { hasPermission } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +55,7 @@ export default function Dashboard() {
             <div className="label">Total encaissé</div>
             <div className="value">{format(stats.totalAnnee)}</div>
             <div className="sub">Sur l'année {annee}</div>
+            {formatRepartition(stats.totalAnneeParDevise) && <div className="sub">{formatRepartition(stats.totalAnneeParDevise)}</div>}
           </div>
         </div>
         {!data.modeHistorique && (
@@ -64,6 +65,7 @@ export default function Dashboard() {
               <div className="label">Aujourd'hui</div>
               <div className="value">{format(stats.paiementsAujourdhui)}</div>
               <div className="sub">Ce mois : {format(stats.paiementsMois)}</div>
+              {formatRepartition(stats.paiementsAujourdhuiParDevise) && <div className="sub">{formatRepartition(stats.paiementsAujourdhuiParDevise)}</div>}
             </div>
           </div>
         )}
@@ -75,6 +77,7 @@ export default function Dashboard() {
                 <div className="label">Dépenses</div>
                 <div className="value">{format(stats.totalDepenses)}</div>
                 <div className="sub">Sur l'année {annee}</div>
+                {formatRepartition(stats.totalDepensesParDevise) && <div className="sub">{formatRepartition(stats.totalDepensesParDevise)}</div>}
               </div>
             </div>
             <div className="stat-card">
@@ -83,6 +86,7 @@ export default function Dashboard() {
                 <div className="label">Solde net</div>
                 <div className="value" style={{ color: stats.soldeNet >= 0 ? 'var(--success)' : 'var(--danger)' }}>{format(stats.soldeNet)}</div>
                 <div className="sub">Recettes − dépenses</div>
+                {formatRepartition(stats.soldeNetParDevise) && <div className="sub">{formatRepartition(stats.soldeNetParDevise)}</div>}
               </div>
             </div>
           </>
@@ -160,7 +164,7 @@ export default function Dashboard() {
                   <td>{p.prenom} {p.nom}</td>
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
-                  <td><strong>{format(p.montant_usd)}</strong></td>
+                  <td><strong>{formatOriginal(p)}</strong></td>
                   <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                 </tr>
               ))}

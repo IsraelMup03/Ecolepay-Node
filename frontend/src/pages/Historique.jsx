@@ -6,11 +6,17 @@ import { useDevise } from '../context/DeviseContext.jsx';
 
 const STATUT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
 const STATUT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
+const PAIEMENT_STATUT_LABELS = { valide: 'Valide', rembourse: 'Remboursé', annule: 'Annulé', partiel: 'Partiel' };
+const PAIEMENT_STATUT_BADGE = { valide: 'badge-success', rembourse: 'badge-danger', annule: 'badge-default' };
+// Remboursements formels (approuve/rejete/en_attente) et surplus (rendu/en_attente) partagent
+// la meme colonne Statut sur cet onglet -- voir le meme jeu de valeurs dans Remboursements.jsx.
+const REMB_STATUT_LABELS = { en_attente: 'En attente', approuve: 'Approuvé', rejete: 'Rejeté', rendu: 'Rendu' };
+const REMB_STATUT_BADGE = { en_attente: 'badge-warning', approuve: 'badge-success', rejete: 'badge-danger', rendu: 'badge-success' };
 
 export default function Historique() {
   const navigate = useNavigate();
   const { viewingAnnee, setViewingAnnee } = useAnnee();
-  const { format } = useDevise();
+  const { format, formatOriginal, formatRepartition } = useDevise();
   const [annees, setAnnees] = useState([]);
   const [anneeCourante, setAnneeCourante] = useState(null);
   const [annee, setAnnee] = useState(null);
@@ -64,7 +70,11 @@ export default function Historique() {
           <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
             <div className="stat-card">
               <div className="stat-icon green"><i className="ph-bold ph-currency-circle-dollar"></i></div>
-              <div className="stat-info"><div className="label">Total encaissé</div><div className="value">{format(data.resume.total_encaisse)}</div></div>
+              <div className="stat-info">
+                <div className="label">Total encaissé</div>
+                <div className="value">{format(data.resume.total_encaisse)}</div>
+                {formatRepartition(data.resume.total_encaisseParDevise) && <div className="sub">{formatRepartition(data.resume.total_encaisseParDevise)}</div>}
+              </div>
             </div>
             <div className="stat-card">
               <div className="stat-icon blue"><i className="ph-bold ph-list-checks"></i></div>
@@ -100,7 +110,7 @@ export default function Historique() {
                         <td>{p.classe || '—'}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
                         <td>
-                          <strong style={p.statut === 'rembourse' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                          <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{formatOriginal(p)}</strong>
                           {p.montant_rembourse_usd > 0 && (
                             <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                           )}
@@ -109,7 +119,7 @@ export default function Historique() {
                           )}
                         </td>
                         <td>{p.mode_paiement}</td>
-                        <td><span className={`badge ${p.statut === 'valide' ? 'badge-success' : p.statut === 'rembourse' ? 'badge-danger' : 'badge-default'}`}>{p.statut}</span></td>
+                        <td><span className={`badge ${PAIEMENT_STATUT_BADGE[p.statut] || 'badge-default'}`}>{PAIEMENT_STATUT_LABELS[p.statut] || p.statut}</span></td>
                         <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
                         <td className="text-muted">{p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—'}</td>
                       </tr>
@@ -131,17 +141,18 @@ export default function Historique() {
             <div className="card">
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Référence</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th><th>Approuvé par</th></tr></thead>
+                  <thead><tr><th>Référence</th><th>Type</th><th>Élève</th><th>Paiement</th><th>Montant</th><th>Motif</th><th>Statut</th><th>Date</th><th>Approuvé par</th></tr></thead>
                   <tbody>
-                    {data.remboursements.length === 0 && <tr><td colSpan={8} className="text-center text-muted">Aucun remboursement pour cette année.</td></tr>}
+                    {data.remboursements.length === 0 && <tr><td colSpan={9} className="text-center text-muted">Aucun remboursement pour cette année.</td></tr>}
                     {data.remboursements.map((r) => (
                       <tr key={r.id}>
                         <td><code>{r.reference_remboursement}</code></td>
+                        <td><span className={`badge ${r.type === 'surplus' ? 'badge-warning' : 'badge-info'}`}>{r.type === 'surplus' ? 'Surplus' : 'Remboursement'}</span></td>
                         <td>{r.prenom} {r.nom} <span className="text-muted">({r.matricule})</span></td>
                         <td><code>{r.pay_ref}</code></td>
-                        <td><strong>{format(r.montant_usd)}</strong></td>
+                        <td><strong>{formatOriginal(r)}</strong></td>
                         <td className="text-muted">{r.motif}</td>
-                        <td><span className={`badge ${r.statut === 'approuve' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{r.statut}</span></td>
+                        <td><span className={`badge ${REMB_STATUT_BADGE[r.statut] || 'badge-warning'}`}>{REMB_STATUT_LABELS[r.statut] || r.statut}</span></td>
                         <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
                         <td className="text-muted">{r.appr_prenom ? `${r.appr_prenom} ${r.appr_nom}` : '—'}</td>
                       </tr>

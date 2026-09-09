@@ -11,6 +11,39 @@ router.use(requireAuth);
 // paiement d'eleve, doit donc y compter -- "+=" et jamais "=" pour ne pas ecraser le total
 // paiements d'un mois qui a aussi une recette diverse ce mois-la (meme piege que dans
 // comptabilite.js/resume).
+// Somme + repartition par devise reellement saisie sur "paiements" pour un WHERE donne : le
+// surplus (toujours en USD, voir schema) est ajoute inconditionnellement au panier USD,
+// jamais partitionne par la devise de la ligne. Les deux paniers se recombinent toujours
+// exactement au total existant (meme expression, juste partitionnee par CASE).
+async function paiementsParDevise(whereSql, params) {
+  const [[row]] = await db.query(
+    `SELECT COALESCE(SUM(montant_usd + montant_surplus*(1-surplus_rembourse)),0) as total,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='USD' THEN montant_usd ELSE 0 END),0) as usd_natif_base,
+            COALESCE(SUM(montant_surplus*(1-surplus_rembourse)),0) as surplus_total,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='CDF' THEN montant ELSE 0 END),0) as cdf_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='CDF' THEN montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+     FROM paiements WHERE ${whereSql}`, params
+  );
+  const usd = (parseFloat(row.usd_natif_base) || 0) + (parseFloat(row.surplus_total) || 0);
+  return { total: parseFloat(row.total) || 0, parDevise: { usd, cdf: parseFloat(row.cdf_natif) || 0, cdfEnUsd: parseFloat(row.cdf_natif_equiv_usd) || 0 } };
+}
+
+// Meme principe pour depenses/recettes_diverses (pas de notion de surplus).
+async function tableParDevise(table, whereSql, params) {
+  const [[row]] = await db.query(
+    `SELECT COALESCE(SUM(montant_usd),0) as total,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='USD' THEN montant_usd ELSE 0 END),0) as usd_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='CDF' THEN montant ELSE 0 END),0) as cdf_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(devise,'USD')='CDF' THEN montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+     FROM ${table} WHERE ${whereSql}`, params
+  );
+  return { total: parseFloat(row.total) || 0, parDevise: { usd: parseFloat(row.usd_natif) || 0, cdf: parseFloat(row.cdf_natif) || 0, cdfEnUsd: parseFloat(row.cdf_natif_equiv_usd) || 0 } };
+}
+
+function combinerParDevise(...parties) {
+  return parties.reduce((acc, p) => ({ usd: acc.usd + p.usd, cdf: acc.cdf + p.cdf, cdfEnUsd: acc.cdfEnUsd + p.cdfEnUsd }), { usd: 0, cdf: 0, cdfEnUsd: 0 });
+}
+
 function fusionnerMensuel(paiementsRows, recettesRows) {
   const moisMap = new Map();
   paiementsRows.forEach((m) => moisMap.set(m.mk, { mk: m.mk, lbl: m.lbl, total: parseFloat(m.total) || 0, nb: m.nb }));
@@ -65,9 +98,8 @@ router.get('/', async (req, res) => {
     // recu en caisse, y compris la part en surplus (pas encore rendue a la famille) -- pas
     // seulement la part appliquee a la dette de l'eleve. Voir le meme choix dans le
     // commentaire ci-dessous pour totalAnneeScolarite, qui lui reste volontairement capped.
-    const [[{ totalAnnee: totalAnneePaiements }]] = await db.query(
-      "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
-    );
+    const paiementsAnnee = await paiementsParDevise('annee_scolaire=? AND statut=\'valide\'', [annee]);
+    const totalAnneePaiements = paiementsAnnee.total;
     // Le taux de recouvrement compare ce qui a ete paye de scolarite a ce qui est attendu
     // de scolarite (totalAttendu, base sur frais_scolarite_total) : melanger les frais
     // d'inscription/divers dans le numerateur gonflait artificiellement ce taux a chaque
@@ -84,18 +116,22 @@ router.get('/', async (req, res) => {
     );
     const elevesNonSoldes = totalEleves - elevesSoldes;
 
-    const [[{ totalDepenses }]] = await db.query(
-      "SELECT COALESCE(SUM(montant_usd),0) as totalDepenses FROM depenses WHERE annee_scolaire=?", [annee]
-    );
+    const depensesAnnee = await tableParDevise('depenses', 'annee_scolaire=?', [annee]);
+    const totalDepenses = depensesAnnee.total;
     // Recettes diverses (subventions, dons...) : memes conventions que depenses ci-dessus.
     // Comptent comme un encaissement a part entiere (comme dans comptabilite.js/resume) :
     // pliees directement dans totalAnnee, pas seulement dans soldeNet, sinon un don resterait
     // invisible sur la carte "Total encaisse" alors qu'il apparait deja dans "Solde net".
-    const [[{ totalRecettesDiverses }]] = await db.query(
-      "SELECT COALESCE(SUM(montant_usd),0) as totalRecettesDiverses FROM recettes_diverses WHERE annee_scolaire=?", [annee]
-    );
+    const recettesDiversesAnnee = await tableParDevise('recettes_diverses', 'annee_scolaire=?', [annee]);
+    const totalRecettesDiverses = recettesDiversesAnnee.total;
     const totalAnnee = totalAnneePaiements + totalRecettesDiverses;
     const soldeNet = totalAnnee - totalDepenses;
+    const totalAnneeParDevise = combinerParDevise(paiementsAnnee.parDevise, recettesDiversesAnnee.parDevise);
+    const soldeNetParDevise = {
+      usd: totalAnneeParDevise.usd - depensesAnnee.parDevise.usd,
+      cdf: totalAnneeParDevise.cdf - depensesAnnee.parDevise.cdf,
+      cdfEnUsd: totalAnneeParDevise.cdfEnUsd - depensesAnnee.parDevise.cdfEnUsd,
+    };
 
     const [mensuelPaiements] = await db.query(
       `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
@@ -134,9 +170,10 @@ router.get('/', async (req, res) => {
       ecole, annee, devise, modeHistorique,
       stats: {
         totalEleves, totalFilles, totalGarcons, totalClasses,
-        totalAnnee, paiementsAujourdhui: 0, paiementsMois: 0, totalAttendu, taux,
+        totalAnnee, totalAnneeParDevise, paiementsAujourdhui: 0, paiementsMois: 0, totalAttendu, taux,
         elevesSoldes, elevesNonSoldes, payF: 0, payM: 0,
-        totalDepenses, totalRecettesDiverses, soldeNet,
+        totalDepenses, totalDepensesParDevise: depensesAnnee.parDevise,
+        totalRecettesDiverses, soldeNet, soldeNetParDevise,
       },
       mensuel, parClasse, derniers,
     });
@@ -149,26 +186,19 @@ router.get('/', async (req, res) => {
 
   // montant_usd + montant_surplus : voir le commentaire equivalent dans la branche
   // historique ci-dessus -- l'argent recu en surplus fait partie de l'encaissement reel.
-  const [[{ totalAnnee: totalAnneePaiements }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as totalAnnee FROM paiements WHERE annee_scolaire=? AND statut='valide'", [annee]
-  );
-  const [[{ paiementsAujourdhui: paiementsAujourdhuiPaiements }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as paiementsAujourdhui FROM paiements WHERE DATE(date_paiement)=CURDATE() AND statut='valide' AND annee_scolaire=?", [annee]
-  );
-  const [[{ paiementsMois: paiementsMoisPaiements }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd + montant_surplus * (1 - surplus_rembourse)),0) as paiementsMois FROM paiements WHERE MONTH(date_paiement)=MONTH(CURDATE()) AND YEAR(date_paiement)=YEAR(CURDATE()) AND statut='valide' AND annee_scolaire=?", [annee]
-  );
+  const paiementsAnnee = await paiementsParDevise('annee_scolaire=? AND statut=\'valide\'', [annee]);
+  const totalAnneePaiements = paiementsAnnee.total;
+  const paiementsAujourdhuiRow = await paiementsParDevise("DATE(date_paiement)=CURDATE() AND statut='valide' AND annee_scolaire=?", [annee]);
+  const paiementsMoisRow = await paiementsParDevise('MONTH(date_paiement)=MONTH(CURDATE()) AND YEAR(date_paiement)=YEAR(CURDATE()) AND statut=\'valide\' AND annee_scolaire=?', [annee]);
   // Recettes diverses recues aujourd'hui/ce mois-ci : un don/une subvention est un
   // encaissement reel au meme titre qu'un paiement d'eleve, doit donc compter ici aussi
   // (sinon invisible sur "Aujourd'hui" alors que deja compte dans "Solde net").
-  const [[{ recettesDiversesAujourdhui }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as recettesDiversesAujourdhui FROM recettes_diverses WHERE DATE(date_recette)=CURDATE() AND annee_scolaire=?", [annee]
-  );
-  const [[{ recettesDiversesMois }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as recettesDiversesMois FROM recettes_diverses WHERE MONTH(date_recette)=MONTH(CURDATE()) AND YEAR(date_recette)=YEAR(CURDATE()) AND annee_scolaire=?", [annee]
-  );
-  const paiementsAujourdhui = paiementsAujourdhuiPaiements + recettesDiversesAujourdhui;
-  const paiementsMois = paiementsMoisPaiements + recettesDiversesMois;
+  const recettesDiversesAujourdhuiRow = await tableParDevise('recettes_diverses', "DATE(date_recette)=CURDATE() AND annee_scolaire=?", [annee]);
+  const recettesDiversesMoisRow = await tableParDevise('recettes_diverses', 'MONTH(date_recette)=MONTH(CURDATE()) AND YEAR(date_recette)=YEAR(CURDATE()) AND annee_scolaire=?', [annee]);
+  const paiementsAujourdhui = paiementsAujourdhuiRow.total + recettesDiversesAujourdhuiRow.total;
+  const paiementsMois = paiementsMoisRow.total + recettesDiversesMoisRow.total;
+  const paiementsAujourdhuiParDevise = combinerParDevise(paiementsAujourdhuiRow.parDevise, recettesDiversesAujourdhuiRow.parDevise);
+  const paiementsMoisParDevise = combinerParDevise(paiementsMoisRow.parDevise, recettesDiversesMoisRow.parDevise);
   const [[{ totalAttendu }]] = await db.query(
     "SELECT COALESCE(SUM(frais_scolarite_total),0) as totalAttendu FROM eleves WHERE statut='actif' AND annee_scolaire=?", [annee]
   );
@@ -188,15 +218,19 @@ router.get('/', async (req, res) => {
   );
   const elevesNonSoldes = totalEleves - elevesSoldes;
 
-  const [[{ totalDepenses }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as totalDepenses FROM depenses WHERE annee_scolaire=?", [annee]
-  );
+  const depensesAnnee = await tableParDevise('depenses', 'annee_scolaire=?', [annee]);
+  const totalDepenses = depensesAnnee.total;
   // Voir commentaire equivalent dans la branche historique ci-dessus.
-  const [[{ totalRecettesDiverses }]] = await db.query(
-    "SELECT COALESCE(SUM(montant_usd),0) as totalRecettesDiverses FROM recettes_diverses WHERE annee_scolaire=?", [annee]
-  );
+  const recettesDiversesAnnee = await tableParDevise('recettes_diverses', 'annee_scolaire=?', [annee]);
+  const totalRecettesDiverses = recettesDiversesAnnee.total;
   const totalAnnee = totalAnneePaiements + totalRecettesDiverses;
   const soldeNet = totalAnnee - totalDepenses;
+  const totalAnneeParDevise = combinerParDevise(paiementsAnnee.parDevise, recettesDiversesAnnee.parDevise);
+  const soldeNetParDevise = {
+    usd: totalAnneeParDevise.usd - depensesAnnee.parDevise.usd,
+    cdf: totalAnneeParDevise.cdf - depensesAnnee.parDevise.cdf,
+    cdfEnUsd: totalAnneeParDevise.cdfEnUsd - depensesAnnee.parDevise.cdfEnUsd,
+  };
 
   const [mensuelPaiements] = await db.query(
     `SELECT DATE_FORMAT(date_paiement,'%Y-%m') as mk, DATE_FORMAT(date_paiement,'%b %Y') as lbl,
@@ -241,9 +275,11 @@ router.get('/', async (req, res) => {
     ecole, annee, devise, modeHistorique,
     stats: {
       totalEleves, totalFilles, totalGarcons, totalClasses,
-      totalAnnee, paiementsAujourdhui, paiementsMois, totalAttendu, taux,
+      totalAnnee, totalAnneeParDevise, paiementsAujourdhui, paiementsMois, totalAttendu, taux,
+      paiementsAujourdhuiParDevise, paiementsMoisParDevise,
       elevesSoldes, elevesNonSoldes, payF, payM,
-      totalDepenses, totalRecettesDiverses, soldeNet,
+      totalDepenses, totalDepensesParDevise: depensesAnnee.parDevise,
+      totalRecettesDiverses, soldeNet, soldeNetParDevise,
     },
     mensuel, parClasse, derniers,
   });

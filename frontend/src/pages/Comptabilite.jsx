@@ -13,7 +13,7 @@ const RECETTE_FORM_INIT = { categorie: 'autre', montant: '', devise: 'USD', mode
 
 export default function Comptabilite() {
   const { viewingAnnee } = useAnnee();
-  const { format, devise, convert } = useDevise();
+  const { format, formatOriginal, formatRepartition, devise, convert } = useDevise();
   const [resume, setResume] = useState(null);
   const [tab, setTab] = useState('depenses');
   const [depenses, setDepenses] = useState([]);
@@ -188,15 +188,29 @@ export default function Comptabilite() {
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card">
           <div className="stat-icon green"><i className="ph ph-arrow-circle-down"></i></div>
-          <div className="stat-info"><div className="label">Total recettes</div><div className="value">{format(resume.totalRecettes)}</div><div className="sub">{resume.nbRecettes} paiement(s)</div></div>
+          <div className="stat-info">
+            <div className="label">Total recettes</div>
+            <div className="value">{format(resume.totalRecettes)}</div>
+            <div className="sub">{resume.nbRecettes} paiement(s)</div>
+            {formatRepartition(resume.totalRecettesParDevise) && <div className="sub">{formatRepartition(resume.totalRecettesParDevise)}</div>}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon red"><i className="ph ph-arrow-circle-up"></i></div>
-          <div className="stat-info"><div className="label">Total dépenses</div><div className="value">{format(resume.totalDepenses)}</div><div className="sub">{resume.nbDepenses} sortie(s)</div></div>
+          <div className="stat-info">
+            <div className="label">Total dépenses</div>
+            <div className="value">{format(resume.totalDepenses)}</div>
+            <div className="sub">{resume.nbDepenses} sortie(s)</div>
+            {formatRepartition(resume.totalDepensesParDevise) && <div className="sub">{formatRepartition(resume.totalDepensesParDevise)}</div>}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon blue"><i className="ph ph-scales"></i></div>
-          <div className="stat-info"><div className="label">Solde net</div><div className="value" style={{ color: resume.solde >= 0 ? 'var(--success)' : 'var(--danger)' }}>{format(resume.solde)}</div></div>
+          <div className="stat-info">
+            <div className="label">Solde net</div>
+            <div className="value" style={{ color: resume.solde >= 0 ? 'var(--success)' : 'var(--danger)' }}>{format(resume.solde)}</div>
+            {formatRepartition(resume.soldeParDevise) && <div className="sub">{formatRepartition(resume.soldeParDevise)}</div>}
+          </div>
         </div>
       </div>
 
@@ -282,7 +296,7 @@ export default function Comptabilite() {
                       <td><code>{d.reference}</code></td>
                       <td><span className="badge badge-info">{resume.categories[d.categorie] || d.categorie}</span></td>
                       <td>{d.beneficiaire || '—'}</td>
-                      <td><strong style={{ color: 'var(--danger)' }}>{format(d.montant_usd)}</strong></td>
+                      <td><strong style={{ color: 'var(--danger)' }}>{formatOriginal(d)}</strong></td>
                       <td>{MODE_LABELS[d.mode_paiement] || d.mode_paiement}</td>
                       <td className="text-muted">{new Date(d.date_depense).toLocaleString('fr-FR')}</td>
                       <td className="text-muted">{d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—'}</td>
@@ -336,7 +350,7 @@ export default function Comptabilite() {
                       <td><code>{r.reference}</code></td>
                       <td><span className="badge badge-info">{(resume.categoriesRecettes && resume.categoriesRecettes[r.categorie]) || r.categorie}</span></td>
                       <td>{r.provenance || '—'}</td>
-                      <td><strong style={{ color: 'var(--success)' }}>{format(r.montant_usd)}</strong></td>
+                      <td><strong style={{ color: 'var(--success)' }}>{formatOriginal(r)}</strong></td>
                       <td>{MODE_LABELS[r.mode_paiement] || r.mode_paiement}</td>
                       <td className="text-muted">{new Date(r.date_recette).toLocaleString('fr-FR')}</td>
                       <td className="text-muted">{r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—'}</td>

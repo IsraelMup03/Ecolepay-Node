@@ -2,10 +2,27 @@ const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { logActivite, envoyerCorbeille, getParam, getEcole } = require('../utils/helpers');
-const { newWorkbook, addLetterhead, addTable, sendWorkbook, deviseLabel } = require('../utils/excelReport');
+const { newWorkbook, addLetterhead, addTable, addRepartitionDevise, montantSaisiTexte, sendWorkbook, deviseLabel } = require('../utils/excelReport');
 
 const router = express.Router();
 router.use(requireAuth, requirePermission('comptabilite'));
+
+// Somme + repartition par devise reellement saisie pour une liste filtree (depenses ou
+// recettes_diverses, memes conventions, ni l'une ni l'autre n'a de notion de surplus).
+async function sommeEtRepartition(table, alias, whereStr, params) {
+  const [[row]] = await db.query(
+    `SELECT COALESCE(SUM(${alias}.montant_usd),0) as somme,
+            COALESCE(SUM(CASE WHEN COALESCE(${alias}.devise,'USD')='USD' THEN ${alias}.montant_usd ELSE 0 END),0) as usd,
+            COALESCE(SUM(CASE WHEN COALESCE(${alias}.devise,'USD')='CDF' THEN ${alias}.montant ELSE 0 END),0) as cdf,
+            COALESCE(SUM(CASE WHEN COALESCE(${alias}.devise,'USD')='CDF' THEN ${alias}.montant_usd ELSE 0 END),0) as cdfEnUsd
+     FROM ${table} ${alias} ${whereStr}`,
+    params
+  );
+  return {
+    somme: parseFloat(row.somme) || 0,
+    sommeParDevise: { usd: parseFloat(row.usd) || 0, cdf: parseFloat(row.cdf) || 0, cdfEnUsd: parseFloat(row.cdfEnUsd) || 0 },
+  };
+}
 
 const CATEGORIES = {
   salaires: 'Salaires', loyer: 'Loyer', electricite: 'Électricité', eau: 'Eau',
@@ -68,20 +85,51 @@ router.get('/resume', async (req, res) => {
 
   // montant_usd + montant_surplus : les recettes doivent refleter l'argent reellement recu
   // en caisse, surplus (pas encore rendu) compris -- voir le meme choix dans dashboard.js.
+  // Repartition par devise saisie : le surplus est toujours en USD (voir schema), ajoute
+  // inconditionnellement au panier USD plutot que partitionne par p.devise.
   const [[recettesTotal]] = await db.query(
-    `SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as total, COUNT(*) as nb FROM paiements p WHERE ${whereRecettes.join(' AND ')}`,
+    `SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as total, COUNT(*) as nb,
+            COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='USD' THEN p.montant_usd ELSE 0 END),0) as usd_natif_base,
+            COALESCE(SUM(p.montant_surplus * (1 - p.surplus_rembourse)),0) as surplus_total,
+            COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant ELSE 0 END),0) as cdf_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+     FROM paiements p WHERE ${whereRecettes.join(' AND ')}`,
     paramsRecettes
   );
   const [[depensesTotal]] = await db.query(
-    `SELECT COALESCE(SUM(d.montant_usd),0) as total, COUNT(*) as nb FROM depenses d WHERE ${whereDepenses.join(' AND ')}`,
+    `SELECT COALESCE(SUM(d.montant_usd),0) as total, COUNT(*) as nb,
+            COALESCE(SUM(CASE WHEN COALESCE(d.devise,'USD')='USD' THEN d.montant_usd ELSE 0 END),0) as usd_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(d.devise,'USD')='CDF' THEN d.montant ELSE 0 END),0) as cdf_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(d.devise,'USD')='CDF' THEN d.montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+     FROM depenses d WHERE ${whereDepenses.join(' AND ')}`,
     paramsDepenses
   );
   // Recettes diverses (hors paiements d'eleves) : doivent s'ajouter au total des recettes
   // partout ou celui-ci est affiche, sinon une entree manuelle serait invisible ici.
   const [[recettesDiversesTotal]] = await db.query(
-    `SELECT COALESCE(SUM(r.montant_usd),0) as total, COUNT(*) as nb FROM recettes_diverses r WHERE ${whereRecettesDiverses.join(' AND ')}`,
+    `SELECT COALESCE(SUM(r.montant_usd),0) as total, COUNT(*) as nb,
+            COALESCE(SUM(CASE WHEN COALESCE(r.devise,'USD')='USD' THEN r.montant_usd ELSE 0 END),0) as usd_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(r.devise,'USD')='CDF' THEN r.montant ELSE 0 END),0) as cdf_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(r.devise,'USD')='CDF' THEN r.montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+     FROM recettes_diverses r WHERE ${whereRecettesDiverses.join(' AND ')}`,
     paramsRecettesDiverses
   );
+  const recettesUsdNatif = (parseFloat(recettesTotal.usd_natif_base) || 0) + (parseFloat(recettesTotal.surplus_total) || 0);
+  const recettesParDevise = {
+    usd: recettesUsdNatif + (parseFloat(recettesDiversesTotal.usd_natif) || 0),
+    cdf: (parseFloat(recettesTotal.cdf_natif) || 0) + (parseFloat(recettesDiversesTotal.cdf_natif) || 0),
+    cdfEnUsd: (parseFloat(recettesTotal.cdf_natif_equiv_usd) || 0) + (parseFloat(recettesDiversesTotal.cdf_natif_equiv_usd) || 0),
+  };
+  const depensesParDevise = {
+    usd: parseFloat(depensesTotal.usd_natif) || 0,
+    cdf: parseFloat(depensesTotal.cdf_natif) || 0,
+    cdfEnUsd: parseFloat(depensesTotal.cdf_natif_equiv_usd) || 0,
+  };
+  const soldeParDevise = {
+    usd: recettesParDevise.usd - depensesParDevise.usd,
+    cdf: recettesParDevise.cdf - depensesParDevise.cdf,
+    cdfEnUsd: recettesParDevise.cdfEnUsd - depensesParDevise.cdfEnUsd,
+  };
 
   const [depensesParCategorie] = await db.query(
     `SELECT d.categorie, COUNT(*) as nb, SUM(d.montant_usd) as total FROM depenses d WHERE ${whereDepenses.join(' AND ')} GROUP BY d.categorie ORDER BY total DESC`,
@@ -126,10 +174,13 @@ router.get('/resume', async (req, res) => {
     annee: anneeCible,
     modeHistorique,
     totalRecettes: (parseFloat(recettesTotal.total) || 0) + (parseFloat(recettesDiversesTotal.total) || 0),
+    totalRecettesParDevise: recettesParDevise,
     nbRecettes: recettesTotal.nb + recettesDiversesTotal.nb,
     totalDepenses: parseFloat(depensesTotal.total) || 0,
+    totalDepensesParDevise: depensesParDevise,
     nbDepenses: depensesTotal.nb,
     solde: (parseFloat(recettesTotal.total) || 0) + (parseFloat(recettesDiversesTotal.total) || 0) - (parseFloat(depensesTotal.total) || 0),
+    soldeParDevise,
     depensesParCategorie: depensesParCategorie.map((c) => ({ categorie: CATEGORIES[c.categorie] || c.categorie, nb: c.nb, total: parseFloat(c.total) || 0 })),
     recettesDiversesParCategorie: recettesDiversesParCategorie.map((c) => ({ categorie: CATEGORIES_RECETTES[c.categorie] || c.categorie, nb: c.nb, total: parseFloat(c.total) || 0 })),
     evolution,
@@ -156,13 +207,13 @@ router.get('/depenses', async (req, res) => {
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
   const [[{ total }]] = await db.query(`SELECT COUNT(*) as total FROM depenses d ${whereStr}`, params);
-  const [[{ somme }]] = await db.query(`SELECT COALESCE(SUM(d.montant_usd),0) as somme FROM depenses d ${whereStr}`, params);
+  const { somme, sommeParDevise } = await sommeEtRepartition('depenses', 'd', whereStr, params);
   const [rows] = await db.query(
     `SELECT d.*, u.prenom as cpt_prenom, u.nom as cpt_nom FROM depenses d LEFT JOIN utilisateurs u ON u.id=d.comptable_id
      ${whereStr} ORDER BY d.date_depense DESC LIMIT ${perPage} OFFSET ${offset}`,
     params
   );
-  res.json({ depenses: rows, total, somme: parseFloat(somme) || 0, page, totalPages: Math.max(1, Math.ceil(total / perPage)) });
+  res.json({ depenses: rows, total, somme, sommeParDevise, page, totalPages: Math.max(1, Math.ceil(total / perPage)) });
 });
 
 // POST /api/comptabilite/depenses  (nouvelle sortie)
@@ -246,6 +297,7 @@ router.get('/depenses/export.xlsx', async (req, res) => {
        ${whereStr} ORDER BY d.date_depense DESC`,
       params
     );
+    const { sommeParDevise } = await sommeEtRepartition('depenses', 'd', whereStr, params);
 
     const ecole = await getEcole();
     const devise = deviseQ === 'CDF' || (deviseQ && deviseQ !== 'USD') ? deviseQ : 'USD';
@@ -259,20 +311,23 @@ router.get('/depenses/export.xlsx', async (req, res) => {
       { header: 'Description', key: 'description', width: 28, type: 'text' },
       { header: 'Mode', key: 'mode', width: 16, type: 'text' },
       { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Montant saisi', key: 'montantSaisi', width: 18, type: 'text' },
       { header: 'Date', key: 'date', width: 18, type: 'text' },
       { header: 'Enregistré par', key: 'comptable', width: 20, type: 'text' },
     ];
-    const nextRow = addLetterhead(sheet, {
+    let nextRow = addLetterhead(sheet, {
       ecole, title: `Dépenses — Année ${anneeCible}`, subtitle: `${rows.length} dépense(s)`,
       generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
       numCols: columns.length,
     });
-    addTable(sheet, nextRow, columns, rows.map((d) => ({
+    nextRow = addTable(sheet, nextRow, columns, rows.map((d) => ({
       reference: d.reference, categorie: CATEGORIES[d.categorie] || d.categorie, beneficiaire: d.beneficiaire || '—',
       description: d.description || '—', mode: MODE_LABELS[d.mode_paiement] || d.mode_paiement,
-      montant: parseFloat(d.montant_usd) || 0, date: new Date(d.date_depense).toLocaleString('fr-FR'),
+      montant: parseFloat(d.montant_usd) || 0, montantSaisi: montantSaisiTexte(d),
+      date: new Date(d.date_depense).toLocaleString('fr-FR'),
       comptable: d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—',
     })), { showTotals: true, devise, taux });
+    addRepartitionDevise(sheet, nextRow, columns.length, sommeParDevise);
 
     await sendWorkbook(res, workbook, `depenses_${anneeCible}_${Date.now()}.xlsx`);
   } catch (e) {
@@ -299,13 +354,13 @@ router.get('/recettes-diverses', async (req, res) => {
   const whereStr = `WHERE ${where.join(' AND ')}`;
 
   const [[{ total }]] = await db.query(`SELECT COUNT(*) as total FROM recettes_diverses r ${whereStr}`, params);
-  const [[{ somme }]] = await db.query(`SELECT COALESCE(SUM(r.montant_usd),0) as somme FROM recettes_diverses r ${whereStr}`, params);
+  const { somme, sommeParDevise } = await sommeEtRepartition('recettes_diverses', 'r', whereStr, params);
   const [rows] = await db.query(
     `SELECT r.*, u.prenom as cpt_prenom, u.nom as cpt_nom FROM recettes_diverses r LEFT JOIN utilisateurs u ON u.id=r.comptable_id
      ${whereStr} ORDER BY r.date_recette DESC LIMIT ${perPage} OFFSET ${offset}`,
     params
   );
-  res.json({ recettes: rows, total, somme: parseFloat(somme) || 0, page, totalPages: Math.max(1, Math.ceil(total / perPage)) });
+  res.json({ recettes: rows, total, somme, sommeParDevise, page, totalPages: Math.max(1, Math.ceil(total / perPage)) });
 });
 
 // POST /api/comptabilite/recettes-diverses  (nouvelle entree)
@@ -389,6 +444,7 @@ router.get('/recettes-diverses/export.xlsx', async (req, res) => {
        ${whereStr} ORDER BY r.date_recette DESC`,
       params
     );
+    const { sommeParDevise } = await sommeEtRepartition('recettes_diverses', 'r', whereStr, params);
 
     const ecole = await getEcole();
     const devise = deviseQ === 'CDF' || (deviseQ && deviseQ !== 'USD') ? deviseQ : 'USD';
@@ -402,20 +458,23 @@ router.get('/recettes-diverses/export.xlsx', async (req, res) => {
       { header: 'Description', key: 'description', width: 28, type: 'text' },
       { header: 'Mode', key: 'mode', width: 16, type: 'text' },
       { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Montant saisi', key: 'montantSaisi', width: 18, type: 'text' },
       { header: 'Date', key: 'date', width: 18, type: 'text' },
       { header: 'Enregistré par', key: 'comptable', width: 20, type: 'text' },
     ];
-    const nextRow = addLetterhead(sheet, {
+    let nextRow = addLetterhead(sheet, {
       ecole, title: `Recettes diverses — Année ${anneeCible}`, subtitle: `${rows.length} recette(s)`,
       generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
       numCols: columns.length,
     });
-    addTable(sheet, nextRow, columns, rows.map((r) => ({
+    nextRow = addTable(sheet, nextRow, columns, rows.map((r) => ({
       reference: r.reference, categorie: CATEGORIES_RECETTES[r.categorie] || r.categorie, provenance: r.provenance || '—',
       description: r.description || '—', mode: MODE_LABELS[r.mode_paiement] || r.mode_paiement,
-      montant: parseFloat(r.montant_usd) || 0, date: new Date(r.date_recette).toLocaleString('fr-FR'),
+      montant: parseFloat(r.montant_usd) || 0, montantSaisi: montantSaisiTexte(r),
+      date: new Date(r.date_recette).toLocaleString('fr-FR'),
       comptable: r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—',
     })), { showTotals: true, devise, taux });
+    addRepartitionDevise(sheet, nextRow, columns.length, sommeParDevise);
 
     await sendWorkbook(res, workbook, `recettes_diverses_${anneeCible}_${Date.now()}.xlsx`);
   } catch (e) {
@@ -449,25 +508,40 @@ router.get('/rapport.xlsx', async (req, res) => {
     const anneeCourante = await getParam('annee_scolaire_courante');
 
     const [recettes] = await db.query(
-      `SELECT p.montant_usd, p.type_paiement FROM paiements p WHERE p.statut='valide' AND p.annee_scolaire=? AND p.date_paiement BETWEEN ? AND ?`,
+      `SELECT p.montant, p.devise, p.montant_usd, p.type_paiement FROM paiements p WHERE p.statut='valide' AND p.annee_scolaire=? AND p.date_paiement BETWEEN ? AND ?`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
     const [depenses] = await db.query(
-      `SELECT d.montant_usd, d.categorie, d.reference, d.beneficiaire, d.description, d.date_depense, u.prenom as cpt_prenom, u.nom as cpt_nom
+      `SELECT d.montant, d.devise, d.montant_usd, d.categorie, d.reference, d.beneficiaire, d.description, d.date_depense, u.prenom as cpt_prenom, u.nom as cpt_nom
        FROM depenses d LEFT JOIN utilisateurs u ON u.id=d.comptable_id
        WHERE d.annee_scolaire=? AND d.date_depense BETWEEN ? AND ?`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
     const [recettesDiverses] = await db.query(
-      `SELECT r.montant_usd, r.categorie, r.reference, r.provenance, r.description, r.date_recette, u.prenom as cpt_prenom, u.nom as cpt_nom
+      `SELECT r.montant, r.devise, r.montant_usd, r.categorie, r.reference, r.provenance, r.description, r.date_recette, u.prenom as cpt_prenom, u.nom as cpt_nom
        FROM recettes_diverses r LEFT JOIN utilisateurs u ON u.id=r.comptable_id
        WHERE r.annee_scolaire=? AND r.date_recette BETWEEN ? AND ?`,
       [anneeCourante, sqlFmt(debut), sqlFmt(fin)]
     );
 
+    // Repartition par devise reellement saisie, en JS a partir des lignes deja chargees
+    // (memes conventions que sommeEtRepartition/partitionParDevise ailleurs : usd/cdf = montants
+    // natifs, cdfEnUsd = equivalent USD de la part FC).
+    function partitionner(lignes) {
+      let usd = 0, cdf = 0, cdfEnUsd = 0;
+      lignes.forEach((l) => {
+        if ((l.devise || 'USD') === 'CDF') { cdf += parseFloat(l.montant) || 0; cdfEnUsd += parseFloat(l.montant_usd) || 0; }
+        else { usd += parseFloat(l.montant_usd) || 0; }
+      });
+      return { usd, cdf, cdfEnUsd };
+    }
+    const combiner = (...parties) => parties.reduce((acc, p) => ({ usd: acc.usd + p.usd, cdf: acc.cdf + p.cdf, cdfEnUsd: acc.cdfEnUsd + p.cdfEnUsd }), { usd: 0, cdf: 0, cdfEnUsd: 0 });
+
     const totalRecettes = recettes.reduce((s, r) => s + (parseFloat(r.montant_usd) || 0), 0)
       + recettesDiverses.reduce((s, r) => s + (parseFloat(r.montant_usd) || 0), 0);
     const totalDepenses = depenses.reduce((s, d) => s + (parseFloat(d.montant_usd) || 0), 0);
+    const totalRecettesParDevise = combiner(partitionner(recettes), partitionner(recettesDiverses));
+    const totalDepensesParDevise = partitionner(depenses);
     const ecole = await getEcole();
     const { devise: deviseQ } = req.query;
     const devise = deviseQ === 'CDF' || (deviseQ && deviseQ !== 'USD') ? deviseQ : 'USD';
@@ -483,12 +557,16 @@ router.get('/rapport.xlsx', async (req, res) => {
       generatedBy, numCols: 3,
     });
 
+    r = addRepartitionDevise(resume, r, 3, totalRecettesParDevise, 'Recettes');
+    r += 1;
+
     const parCategorie = {};
     depenses.forEach((d) => { parCategorie[d.categorie] = (parCategorie[d.categorie] || 0) + (parseFloat(d.montant_usd) || 0); });
     r = addTable(resume, r, [
       { header: 'Catégorie de dépense', key: 'categorie', width: 24, type: 'text' },
       { header: 'Total', key: 'total', width: 18, type: 'currency', totalize: true },
     ], Object.entries(parCategorie).map(([cat, total]) => ({ categorie: CATEGORIES[cat] || cat, total })), { showTotals: true, devise, taux });
+    r = addRepartitionDevise(resume, r, 3, totalDepensesParDevise, 'Dépenses');
 
     const detail = workbook.addWorksheet('Détail des dépenses', { views: [{ state: 'frozen', ySplit: 8 }] });
     const detailCols = [
@@ -497,15 +575,17 @@ router.get('/rapport.xlsx', async (req, res) => {
       { header: 'Bénéficiaire', key: 'beneficiaire', width: 22, type: 'text' },
       { header: 'Description', key: 'description', width: 28, type: 'text' },
       { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Montant saisi', key: 'montantSaisi', width: 18, type: 'text' },
       { header: 'Date', key: 'date', width: 18, type: 'text' },
       { header: 'Enregistré par', key: 'comptable', width: 20, type: 'text' },
     ];
     const rDetail = addLetterhead(detail, { ecole, title: `${labelType} — Détail des dépenses`, subtitle: periodeLabel, generatedBy, numCols: detailCols.length });
-    addTable(detail, rDetail, detailCols, depenses.map((d) => ({
+    const rDetailFin = addTable(detail, rDetail, detailCols, depenses.map((d) => ({
       reference: d.reference, categorie: CATEGORIES[d.categorie] || d.categorie, beneficiaire: d.beneficiaire || '—',
-      description: d.description || '—', montant: parseFloat(d.montant_usd) || 0,
+      description: d.description || '—', montant: parseFloat(d.montant_usd) || 0, montantSaisi: montantSaisiTexte(d),
       date: new Date(d.date_depense).toLocaleString('fr-FR'), comptable: d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—',
     })), { showTotals: true, devise, taux });
+    addRepartitionDevise(detail, rDetailFin, detailCols.length, totalDepensesParDevise);
 
     if (recettesDiverses.length > 0) {
       const detailRecettes = workbook.addWorksheet('Détail des recettes diverses', { views: [{ state: 'frozen', ySplit: 8 }] });
@@ -515,15 +595,17 @@ router.get('/rapport.xlsx', async (req, res) => {
         { header: 'Provenance', key: 'provenance', width: 22, type: 'text' },
         { header: 'Description', key: 'description', width: 28, type: 'text' },
         { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+        { header: 'Montant saisi', key: 'montantSaisi', width: 18, type: 'text' },
         { header: 'Date', key: 'date', width: 18, type: 'text' },
         { header: 'Enregistré par', key: 'comptable', width: 20, type: 'text' },
       ];
       const rRecettes = addLetterhead(detailRecettes, { ecole, title: `${labelType} — Détail des recettes diverses`, subtitle: periodeLabel, generatedBy, numCols: detailRecettesCols.length });
-      addTable(detailRecettes, rRecettes, detailRecettesCols, recettesDiverses.map((r) => ({
+      const rRecettesFin = addTable(detailRecettes, rRecettes, detailRecettesCols, recettesDiverses.map((r) => ({
         reference: r.reference, categorie: CATEGORIES_RECETTES[r.categorie] || r.categorie, provenance: r.provenance || '—',
-        description: r.description || '—', montant: parseFloat(r.montant_usd) || 0,
+        description: r.description || '—', montant: parseFloat(r.montant_usd) || 0, montantSaisi: montantSaisiTexte(r),
         date: new Date(r.date_recette).toLocaleString('fr-FR'), comptable: r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—',
       })), { showTotals: true, devise, taux });
+      addRepartitionDevise(detailRecettes, rRecettesFin, detailRecettesCols.length, partitionner(recettesDiverses));
     }
 
     await sendWorkbook(res, workbook, `comptabilite_${type}_${sqlFmt(debut).slice(0, 10)}.xlsx`);

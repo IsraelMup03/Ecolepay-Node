@@ -8,7 +8,7 @@ import { useDevise } from '../context/DeviseContext.jsx';
 export default function Caisse() {
   const navigate = useNavigate();
   const { viewingAnnee } = useAnnee();
-  const { format } = useDevise();
+  const { format, formatOriginal, formatRepartition } = useDevise();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -116,6 +116,9 @@ export default function Caisse() {
 
               <div className="mb-12">
                 <div className="flex-between mb-12"><span>Scolarité</span><span>{format(caisseInfo.eleve.total_paye_scolarite)} / {format(caisseInfo.eleve.frais_scolarite_total)}</span></div>
+                {formatRepartition(caisseInfo.eleve.total_paye_scolarite_par_devise) && (
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: -8, marginBottom: 8 }}>{formatRepartition(caisseInfo.eleve.total_paye_scolarite_par_devise)}</div>
+                )}
                 {caisseInfo.tranches && caisseInfo.tranches.length > 0 ? (
                   <div>
                     {caisseInfo.tranches.map((t) => (
@@ -148,7 +151,7 @@ export default function Caisse() {
                         <td>{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
                         <td>
-                          <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{format(p.montant_usd)}</strong>
+                          <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{formatOriginal(p)}</strong>
                           {p.montant_rembourse_usd > 0 && (
                             <div className="text-muted" style={{ fontSize: 11 }}><i className="ph ph-arrow-counter-clockwise"></i> Remboursé de {format(p.montant_rembourse_usd)}</div>
                           )}

@@ -3,7 +3,7 @@ const rateLimit = require('express-rate-limit');
 const db = require('../config/db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { genererReferencePaiement, logActivite, getEcole, getParam, envoyerCorbeille } = require('../utils/helpers');
-const { newWorkbook, addLetterhead, addTable, sendWorkbook } = require('../utils/excelReport');
+const { newWorkbook, addLetterhead, addTable, addRepartitionDevise, montantSaisiTexte, sendWorkbook } = require('../utils/excelReport');
 
 const router = express.Router();
 
@@ -26,8 +26,12 @@ const verifyLimiter = rateLimit({
 // du recu, pas p.* (qui exposait aussi des colonnes internes comme comptable_id, taux_change...).
 router.get('/verify/:reference', verifyLimiter, async (req, res) => {
   const { reference } = req.params;
+  // montant_usd/montant_local/taux_change restent internes a la requete (jamais renvoyes
+  // tels quels au public) : seul un `equivalent` deja calcule est expose, pour que la page
+  // de verification publique montre "22 000 FC (≈ 10,00 USD)" sans exposer le taux de
+  // change (parametre interne) ni la colonne montant_local elle-meme.
   const [[p]] = await db.query(
-    `SELECT p.reference, p.montant, p.devise, p.type_paiement, p.date_paiement,
+    `SELECT p.reference, p.montant, p.devise, p.montant_usd, p.montant_local, p.type_paiement, p.date_paiement,
             e.nom as e_nom, e.prenom as e_prenom, e.matricule, c.nom as classe,
             u.prenom as cpt_prenom, u.nom as cpt_nom
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
@@ -37,8 +41,13 @@ router.get('/verify/:reference', verifyLimiter, async (req, res) => {
   );
   if (!p) return res.status(404).json({ error: 'Reçu introuvable.' });
 
+  const equivalent = p.devise === 'CDF' ? parseFloat(p.montant_usd) : parseFloat(p.montant_local);
+  const equivalentDevise = p.devise === 'CDF' ? 'USD' : 'CDF';
+  delete p.montant_usd;
+  delete p.montant_local;
+
   const ecole = await getEcole();
-  res.json({ verified: true, paiement: p, ecole });
+  res.json({ verified: true, paiement: { ...p, equivalent, equivalentDevise }, ecole });
 });
 
 router.use(requireAuth);
@@ -67,9 +76,23 @@ router.get('/', async (req, res) => {
   );
   // montant_usd + montant_surplus : ce total (affiche en haut de la liste filtree) doit
   // refleter l'argent reellement recu, comme "Total encaisse" sur le tableau de bord.
-  const [[{ somme }]] = await db.query(
-    `SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as somme FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
+  // Repartition par devise saisie : le surplus est toujours en USD (voir schema) quelle que
+  // soit la devise de la ligne, donc ajoute inconditionnellement au panier USD plutot que
+  // partitionne par p.devise comme le reste.
+  const [[sommeRow]] = await db.query(
+    `SELECT COALESCE(SUM(p.montant_usd + p.montant_surplus * (1 - p.surplus_rembourse)),0) as somme,
+            COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='USD' THEN p.montant_usd ELSE 0 END),0) as usd_natif_base,
+            COALESCE(SUM(p.montant_surplus * (1 - p.surplus_rembourse)),0) as surplus_total,
+            COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant ELSE 0 END),0) as cdf_natif,
+            COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+     FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
   );
+  const somme = parseFloat(sommeRow.somme) || 0;
+  const sommeParDevise = {
+    usd: (parseFloat(sommeRow.usd_natif_base) || 0) + (parseFloat(sommeRow.surplus_total) || 0),
+    cdf: parseFloat(sommeRow.cdf_natif) || 0,
+    cdfEnUsd: parseFloat(sommeRow.cdf_natif_equiv_usd) || 0,
+  };
   const [rows] = await db.query(
     `SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
             COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
@@ -79,7 +102,7 @@ router.get('/', async (req, res) => {
     params
   );
 
-  res.json({ paiements: rows, total, somme, page, totalPages: Math.ceil(total / perPage) });
+  res.json({ paiements: rows, total, somme, sommeParDevise, page, totalPages: Math.ceil(total / perPage) });
 });
 
 // GET /api/paiements/export.xlsx  (memes filtres que la liste, sans pagination)
@@ -100,7 +123,7 @@ router.get('/export.xlsx', async (req, res) => {
     const whereStr = `WHERE ${where.join(' AND ')}`;
 
     const [rows] = await db.query(
-      `SELECT p.reference, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
+      `SELECT p.reference, p.montant, p.devise, p.montant_usd, p.type_paiement, p.mode_paiement, p.statut, p.date_paiement,
               e.matricule, e.nom, e.prenom, c.nom as classe, u.prenom as cpt_prenom, u.nom as cpt_nom,
               COALESCE((SELECT SUM(r.montant_usd) FROM remboursements r WHERE r.paiement_id=p.id AND r.statut='approuve'),0) as montant_rembourse_usd
        FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
@@ -108,6 +131,18 @@ router.get('/export.xlsx', async (req, res) => {
        ${whereStr} ORDER BY p.date_paiement DESC`,
       params
     );
+    const [[sommeRow]] = await db.query(
+      `SELECT COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='USD' THEN p.montant_usd ELSE 0 END),0) as usd_natif_base,
+              COALESCE(SUM(p.montant_surplus * (1 - p.surplus_rembourse)),0) as surplus_total,
+              COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant ELSE 0 END),0) as cdf_natif,
+              COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant_usd ELSE 0 END),0) as cdf_natif_equiv_usd
+       FROM paiements p JOIN eleves e ON e.id=p.eleve_id ${whereStr}`, params
+    );
+    const sommeParDevise = {
+      usd: (parseFloat(sommeRow.usd_natif_base) || 0) + (parseFloat(sommeRow.surplus_total) || 0),
+      cdf: parseFloat(sommeRow.cdf_natif) || 0,
+      cdfEnUsd: parseFloat(sommeRow.cdf_natif_equiv_usd) || 0,
+    };
 
     const MODE_LABELS = { especes: 'Espèces', mobile_money: 'Mobile Money', virement: 'Virement', cheque: 'Chèque' };
     const MOTIF_LABELS = { scolarite: 'Scolarité', inscription: 'Inscription', uniforme: 'Uniforme', fournitures: 'Fournitures', cantine: 'Cantine', transport: 'Transport', excursion: 'Excursion', examen: 'Examen', assurance: 'Assurance', activites: 'Activités', autre: 'Autre' };
@@ -125,6 +160,7 @@ router.get('/export.xlsx', async (req, res) => {
       { header: 'Mode', key: 'mode', width: 16, type: 'text' },
       { header: 'Statut', key: 'statut', width: 14, type: 'text' },
       { header: 'Montant', key: 'montant', width: 16, type: 'currency', totalize: true },
+      { header: 'Montant saisi', key: 'montantSaisi', width: 18, type: 'text' },
       { header: 'Remboursement', key: 'remb', width: 22, type: 'text' },
       { header: 'Date', key: 'date', width: 18, type: 'text' },
       { header: 'Encaissé par', key: 'encaisse_par', width: 20, type: 'text' },
@@ -134,19 +170,20 @@ router.get('/export.xlsx', async (req, res) => {
       generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
       numCols: columns.length,
     });
-    addTable(sheet, nextRow, columns, rows.map((p) => {
+    const finTable = addTable(sheet, nextRow, columns, rows.map((p) => {
       const rembUsd = parseFloat(p.montant_rembourse_usd) || 0;
       const rembAffiche = devise === 'CDF' ? rembUsd * taux : rembUsd;
       const rembLabel = devise === 'CDF' ? 'FC' : 'USD';
       return {
         reference: p.reference, eleve: `${p.prenom} ${p.nom}`, matricule: p.matricule, classe: p.classe || '—',
         motif: MOTIF_LABELS[p.type_paiement] || p.type_paiement, mode: MODE_LABELS[p.mode_paiement] || p.mode_paiement,
-        statut: p.statut, montant: parseFloat(p.montant_usd) || 0,
+        statut: p.statut, montant: parseFloat(p.montant_usd) || 0, montantSaisi: montantSaisiTexte(p),
         remb: rembUsd > 0 ? `Remboursé de ${rembAffiche.toLocaleString('fr-FR', { maximumFractionDigits: devise === 'CDF' ? 0 : 2 })} ${rembLabel}` : '—',
         date: new Date(p.date_paiement).toLocaleString('fr-FR'),
         encaisse_par: p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—',
       };
     }), { showTotals: true, devise, taux });
+    addRepartitionDevise(sheet, finTable, columns.length, sommeParDevise);
 
     await sendWorkbook(res, workbook, `paiements_${anneeFiltre}_${Date.now()}.xlsx`);
   } catch (e) {
@@ -160,7 +197,7 @@ router.get('/by-reference', async (req, res) => {
   const ref = (req.query.ref || '').trim();
   if (!ref) return res.json(null);
   const [[p]] = await db.query(
-    `SELECT p.id, p.reference, p.montant, p.devise, p.montant_usd, p.statut, p.date_paiement,
+    `SELECT p.id, p.reference, p.montant, p.devise, p.montant_usd, p.montant_local, p.statut, p.date_paiement,
             e.nom, e.prenom, e.matricule
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id
      WHERE p.reference=? AND p.statut='valide'`,

@@ -10,7 +10,7 @@ export default function Recu() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const [data, setData] = useState(null);
-  const { format } = useDevise();
+  const { format, formatOriginal } = useDevise();
 
   useEffect(() => {
     const isNew = searchParams.get('new') !== null;
@@ -71,7 +71,7 @@ export default function Recu() {
               <div className="receipt-subtitle">Détails de paiement</div>
               <table className="receipt-table">
                 <tbody>
-                  <tr><td className="label">Montant</td><td className="value">{format(p.montant_usd)}</td></tr>
+                  <tr><td className="label">Montant</td><td className="value">{formatOriginal(p, { toujours: true })}</td></tr>
                   <tr><td className="label">Type</td><td className="value">{p.type_paiement}</td></tr>
                   <tr><td className="label">Mode</td><td className="value">{p.mode_paiement}</td></tr>
                   {p.periode && <tr><td className="label">Période</td><td className="value">{p.periode}</td></tr>}
@@ -83,7 +83,7 @@ export default function Recu() {
 
           <div className="receipt-amount">
             <div className="receipt-amount-row">
-              <span>Montant payé</span><span>{format(p.montant_usd)}</span>
+              <span>Montant payé</span><span className="receipt-amount-value">{formatOriginal(p, { toujours: true })}</span>
             </div>
           </div>
 

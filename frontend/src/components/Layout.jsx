@@ -3,8 +3,8 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { useAlertes } from '../context/AlertesContext.jsx';
 import { API_URL } from '../api/client.js';
-import client from '../api/client.js';
 import GlobalSearch from './GlobalSearch.jsx';
 
 const NAV_GROUPS = [
@@ -77,16 +77,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [title, subtitle] = findTitle(location.pathname);
-  const [alertes, setAlertes] = useState({ elevesEnAttenteOrientation: 0, remboursementsEnAttente: 0 });
-
-  // Rafraichi a chaque navigation (pas seulement au montage) pour que le bandeau reflete
-  // une action que l'utilisateur vient de faire (transfert, remboursement traite...) des
-  // qu'il change de page, sans avoir besoin d'un contexte/event-bus dedie.
-  useEffect(() => {
-    let annule = false;
-    client.get('/dashboard/alertes').then((res) => { if (!annule) setAlertes(res.data); }).catch(() => {});
-    return () => { annule = true; };
-  }, [location.pathname]);
+  const { alertes } = useAlertes();
 
   const visibleGroups = NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((item) => (item.admin ? user?.role === 'admin' : item.perm ? hasPermission(item.perm) : true)) }))

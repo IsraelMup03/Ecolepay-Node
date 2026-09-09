@@ -62,10 +62,19 @@ router.get('/:id/stats', async (req, res) => {
   const [[stats]] = await db.query(
     `SELECT COUNT(*) as nb_eleves,
             COALESCE(SUM(frais_scolarite_total),0) as total_attendu,
-            COALESCE(SUM((SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye
+            COALESCE(SUM((SELECT COALESCE(SUM(p.montant_usd),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye,
+            COALESCE(SUM((SELECT COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='USD' THEN p.montant_usd ELSE 0 END),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye_usd,
+            COALESCE(SUM((SELECT COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant ELSE 0 END),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye_cdf,
+            COALESCE(SUM((SELECT COALESCE(SUM(CASE WHEN COALESCE(p.devise,'USD')='CDF' THEN p.montant_usd ELSE 0 END),0) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire)),0) as total_paye_cdf_equiv_usd
      FROM eleves e WHERE e.classe_id=? AND e.statut='actif'`,
     [id]
   );
+  stats.total_paye_par_devise = {
+    usd: parseFloat(stats.total_paye_usd) || 0,
+    cdf: parseFloat(stats.total_paye_cdf) || 0,
+    cdfEnUsd: parseFloat(stats.total_paye_cdf_equiv_usd) || 0,
+  };
+  delete stats.total_paye_usd; delete stats.total_paye_cdf; delete stats.total_paye_cdf_equiv_usd;
   const [sections] = await db.query('SELECT * FROM sections WHERE classe_id=? ORDER BY ordre ASC, nom ASC', [id]);
   let parSection = [];
   let elevesSansSection = 0;

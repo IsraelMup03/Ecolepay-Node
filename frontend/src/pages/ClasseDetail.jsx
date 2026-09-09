@@ -7,7 +7,7 @@ import RowMenu from '../components/RowMenu.jsx';
 export default function ClasseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { format, devise } = useDevise();
+  const { format, formatOriginal, formatRepartition, devise } = useDevise();
   const [classe, setClasse] = useState(null);
   const [stats, setStats] = useState(null);
   const [sections, setSections] = useState([]);
@@ -285,7 +285,13 @@ export default function ClasseDetail() {
           <div className="card-header"><h3>Résultats</h3></div>
           <div className="card-body">
             <div className="stat-card"><div className="stat-info"><div className="label">Total attendu</div><div className="value">{format(stats?.total_attendu)}</div></div></div>
-            <div className="stat-card"><div className="stat-info"><div className="label">Total payé</div><div className="value">{format(stats?.total_paye)}</div></div></div>
+            <div className="stat-card">
+              <div className="stat-info">
+                <div className="label">Total payé</div>
+                <div className="value">{format(stats?.total_paye)}</div>
+                {formatRepartition(stats?.total_paye_par_devise) && <div className="sub">{formatRepartition(stats.total_paye_par_devise)}</div>}
+              </div>
+            </div>
             <div className="stat-card"><div className="stat-info"><div className="label">Reste</div><div className="value">{format((stats?.total_attendu || 0) - (stats?.total_paye || 0))}</div></div></div>
           </div>
         </div>

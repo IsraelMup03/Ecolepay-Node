@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { AnneeProvider } from './context/AnneeContext.jsx';
 import { DeviseProvider } from './context/DeviseContext.jsx';
+import { AlertesProvider } from './context/AlertesContext.jsx';
 import './styles/global.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <AnneeProvider>
           <DeviseProvider>
-            <App />
+            <AlertesProvider>
+              <App />
+            </AlertesProvider>
           </DeviseProvider>
         </AnneeProvider>
       </AuthProvider>

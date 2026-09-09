@@ -565,7 +565,8 @@ code { font-family: 'SFMono-Regular', Consolas, monospace; }
   .receipt-table { font-size: 10px; }
   .receipt-table td { padding: .8mm 0; }
   .receipt-amount { background: none; border-top: 1px dashed #000; border-bottom: 1px dashed #000; border-radius: 0; padding: 2mm 0; }
-  .receipt-amount-row { color: #000 !important; font-size: 12px; }
+  .receipt-amount-row { color: #000 !important; font-size: 12px; flex-wrap: wrap; row-gap: 1mm; }
+  .receipt-amount-row .receipt-amount-value { flex: 1 1 100%; text-align: right; }
   .receipt-progress-note { font-size: 9px; }
   .receipt-footer-row { flex-direction: column; gap: 3mm; font-size: 9px; margin-top: 5mm; }
   .receipt-signature { margin-top: 2mm; }

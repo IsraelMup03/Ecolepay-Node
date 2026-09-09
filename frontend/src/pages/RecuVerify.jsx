@@ -3,7 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client.js';
 
 function fmt(n, devise = 'USD') {
-  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${devise}`;
+  const d = devise === 'CDF' ? 0 : 2;
+  const label = devise === 'CDF' ? 'FC' : devise;
+  return `${(parseFloat(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })} ${label}`;
 }
 
 export default function RecuVerify() {
@@ -73,7 +75,7 @@ export default function RecuVerify() {
                   <div className="receipt-subtitle">Paiement</div>
                   <table className="receipt-table">
                     <tbody>
-                      <tr><td className="label">Montant</td><td className="value">{fmt(p.montant, p.devise)}</td></tr>
+                      <tr><td className="label">Montant</td><td className="value">{fmt(p.montant, p.devise)} <span className="text-muted" style={{ fontWeight: 400 }}>(≈ {fmt(p.equivalent, p.equivalentDevise)})</span></td></tr>
                       <tr><td className="label">Type</td><td className="value">{p.type_paiement}</td></tr>
                       <tr><td className="label">Comptable</td><td className="value">{p.cpt_prenom} {p.cpt_nom}</td></tr>
                     </tbody>

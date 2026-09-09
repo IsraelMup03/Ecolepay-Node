@@ -15,6 +15,7 @@ router.get('/', requirePermission('remboursements'), async (req, res) => {
   const anneeFiltre = req.query.annee || await getParam('annee_scolaire_courante');
   const [rows] = await db.query(
     `SELECT r.*, p.reference as pay_ref, p.montant as pay_montant, p.devise as pay_devise, p.annee_scolaire,
+            p.taux_change as source_taux_change,
             e.nom, e.prenom, e.matricule, c.nom as classe,
             u.prenom as approv_prenom, u.nom as approv_nom
      FROM remboursements r
@@ -26,11 +27,18 @@ router.get('/', requirePermission('remboursements'), async (req, res) => {
      ORDER BY r.date_remboursement DESC`,
     [anneeFiltre]
   );
-  const remboursements = rows.map((r) => ({ ...r, type: 'remboursement' }));
+  // remboursements n'a pas ses propres montant_local/taux_change : on derive l'equivalent
+  // depuis le taux du paiement d'origine (deja joint), pour rester coherent avec
+  // formatOriginal() cote frontend sans dependre du taux courant.
+  const remboursements = rows.map((r) => ({
+    ...r,
+    type: 'remboursement',
+    montant_local: r.devise === 'CDF' ? parseFloat(r.montant) : parseFloat(r.montant) * (parseFloat(r.source_taux_change) || 1),
+  }));
 
   const [surplusRows] = await db.query(
     `SELECT p.id as paiement_id, p.reference as pay_ref, p.montant_surplus, p.surplus_rembourse,
-            p.date_paiement, p.annee_scolaire,
+            p.date_paiement, p.annee_scolaire, p.taux_change,
             e.nom, e.prenom, e.matricule, c.nom as classe
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id LEFT JOIN classes c ON c.id=e.classe_id
      WHERE p.annee_scolaire=? AND p.montant_surplus>0 AND p.statut='valide'
@@ -44,7 +52,13 @@ router.get('/', requirePermission('remboursements'), async (req, res) => {
     reference_remboursement: `SURPLUS-${p.pay_ref}`,
     pay_ref: p.pay_ref,
     nom: p.nom, prenom: p.prenom, matricule: p.matricule, classe: p.classe,
+    // Le surplus est toujours capture en USD (voir commentaire sur la colonne montant_surplus
+    // dans le schema), quelle que soit la devise du paiement d'origine -- montant et
+    // montant_usd sont donc identiques ici ; montant_local derive du taux du paiement
+    // d'origine pour rester coherent avec formatOriginal() cote frontend.
+    montant: p.montant_surplus,
     montant_usd: p.montant_surplus,
+    montant_local: parseFloat(p.montant_surplus) * (parseFloat(p.taux_change) || 1),
     devise: 'USD',
     motif: `Surplus à rendre sur le paiement ${p.pay_ref}`,
     statut: p.surplus_rembourse ? 'rendu' : 'en_attente',
