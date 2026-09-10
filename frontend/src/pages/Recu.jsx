@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import client from '../api/client.js';
 import { API_URL } from '../api/client.js';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDateTime } from '../utils/dates.js';
 
 const STATUT_LABELS = { valide: 'Valide', rembourse: 'Remboursé', annule: 'Annulé', partiel: 'Partiel' };
 
@@ -50,7 +51,7 @@ export default function Recu() {
           <div className="receipt-top-grid">
             <div>
               <div className="receipt-meta-row-item"><strong>Référence :</strong> {p.reference}</div>
-              <div className="receipt-meta-row-item"><strong>Date :</strong> {new Date(p.date_paiement).toLocaleString('fr-FR')}</div>
+              <div className="receipt-meta-row-item"><strong>Date :</strong> {formatDateTime(p.date_paiement)}</div>
               <div className="receipt-meta-row-item"><strong>Statut :</strong> {STATUT_LABELS[p.statut] || p.statut}</div>
             </div>
           </div>

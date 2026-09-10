@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDateTime } from '../utils/dates.js';
 
 const STATUT_LABELS = { valide: 'Valide', rembourse: 'Remboursé', annule: 'Annulé', partiel: 'Partiel' };
 const STATUT_BADGE = { valide: 'badge-success', rembourse: 'badge-danger', annule: 'badge-default' };
@@ -161,7 +162,7 @@ export default function Paiements() {
                   </td>
                   <td><span className={`badge ${STATUT_BADGE[p.statut] || 'badge-default'}`} title={p.statut === 'annule' && p.motif_annulation ? p.motif_annulation : undefined}>{STATUT_LABELS[p.statut] || p.statut}</span></td>
                   <td>{p.mode_paiement}</td>
-                  <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
+                  <td className="text-muted">{formatDateTime(p.date_paiement)}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
                   <td className="flex gap-8">
                     <button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')} title="Imprimer le reçu"><i className="ph ph-printer"></i></button>

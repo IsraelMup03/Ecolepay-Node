@@ -3,6 +3,7 @@
  * Usage: set DB_CLIENT=sqlite (ou export) puis `node src/migrate-sqlite.js`
  */
 require('dotenv').config();
+if (!process.env.TZ) process.env.TZ = 'Africa/Kinshasa';
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3');
@@ -284,7 +285,7 @@ async function main() {
       date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (comptable_id) REFERENCES utilisateurs(id) ON DELETE SET NULL
     );
-  `);
+  `.replace(/DEFAULT CURRENT_TIMESTAMP/g, "DEFAULT (datetime('now','localtime'))"));
 
   // Les index dependants des colonnes ajoutees doivent etre crees apres leur
   // migration : sinon une ancienne base echoue avant meme d'atteindre ensureColumn().

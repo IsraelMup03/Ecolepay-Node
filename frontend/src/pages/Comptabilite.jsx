@@ -3,6 +3,7 @@ import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tool
 import client, { API_URL } from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDateTime } from '../utils/dates.js';
 import RowMenu from '../components/RowMenu.jsx';
 import GenererRapportButton from '../components/GenererRapportButton.jsx';
 
@@ -298,7 +299,7 @@ export default function Comptabilite() {
                       <td>{d.beneficiaire || '—'}</td>
                       <td><strong style={{ color: 'var(--danger)' }}>{formatOriginal(d)}</strong></td>
                       <td>{MODE_LABELS[d.mode_paiement] || d.mode_paiement}</td>
-                      <td className="text-muted">{new Date(d.date_depense).toLocaleString('fr-FR')}</td>
+                      <td className="text-muted">{formatDateTime(d.date_depense)}</td>
                       <td className="text-muted">{d.cpt_prenom ? `${d.cpt_prenom} ${d.cpt_nom}` : '—'}</td>
                       <td>
                         {!viewingAnnee && (
@@ -352,7 +353,7 @@ export default function Comptabilite() {
                       <td>{r.provenance || '—'}</td>
                       <td><strong style={{ color: 'var(--success)' }}>{formatOriginal(r)}</strong></td>
                       <td>{MODE_LABELS[r.mode_paiement] || r.mode_paiement}</td>
-                      <td className="text-muted">{new Date(r.date_recette).toLocaleString('fr-FR')}</td>
+                      <td className="text-muted">{formatDateTime(r.date_recette)}</td>
                       <td className="text-muted">{r.cpt_prenom ? `${r.cpt_prenom} ${r.cpt_nom}` : '—'}</td>
                       <td>
                         {!viewingAnnee && (

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client.js';
+import { formatDateTime } from '../utils/dates.js';
 
 function fmt(n, devise = 'USD') {
   const d = devise === 'CDF' ? 0 : 2;
@@ -58,7 +59,7 @@ export default function RecuVerify() {
             <>
               <div className="receipt-meta-row">
                 <div><strong>Référence :</strong> {p.reference}</div>
-                <div><strong>Date :</strong> {new Date(p.date_paiement).toLocaleString('fr-FR')}</div>
+                <div><strong>Date :</strong> {formatDateTime(p.date_paiement)}</div>
               </div>
               <div className="receipt-info-grid">
                 <div>

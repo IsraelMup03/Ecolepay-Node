@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
+import { formatDateTime } from '../utils/dates.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import HistoricalBlock from '../components/HistoricalBlock.jsx';
 import RowMenu from '../components/RowMenu.jsx';
@@ -116,7 +117,7 @@ export default function Utilisateurs() {
                   <td>{u.email}</td>
                   <td><span className="badge badge-info">{u.role}</span></td>
                   <td><span className={`badge ${u.actif ? 'badge-success' : 'badge-default'}`}>{u.actif ? 'Actif' : 'Désactivé'}</span></td>
-                  <td className="text-muted">{u.derniere_connexion ? new Date(u.derniere_connexion).toLocaleString('fr-FR') : 'Jamais'}</td>
+                  <td className="text-muted">{u.derniere_connexion ? formatDateTime(u.derniere_connexion) : 'Jamais'}</td>
                   <td>
                     <RowMenu>
                       {(close) => (

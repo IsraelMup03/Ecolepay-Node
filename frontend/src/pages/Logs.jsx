@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
+import { formatDateTime } from '../utils/dates.js';
 
 export default function Logs() {
   const [rows, setRows] = useState([]);
@@ -35,7 +36,7 @@ export default function Logs() {
               {!loading && rows.length === 0 && <tr><td colSpan={5} className="text-center text-muted">Aucune entrée.</td></tr>}
               {rows.map((l) => (
                 <tr key={l.id}>
-                  <td className="text-muted">{new Date(l.date_action).toLocaleString('fr-FR')}</td>
+                  <td className="text-muted">{formatDateTime(l.date_action)}</td>
                   <td>{l.prenom ? `${l.prenom} ${l.nom}` : <span className="text-muted">Système</span>}</td>
                   <td><strong>{l.action}</strong></td>
                   <td className="text-muted">{l.details || '—'}</td>

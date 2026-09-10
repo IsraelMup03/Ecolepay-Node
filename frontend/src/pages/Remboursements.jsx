@@ -3,6 +3,7 @@ import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDate } from '../utils/dates.js';
 import { useAlertes } from '../context/AlertesContext.jsx';
 
 const STATUT_LABELS = { en_attente: 'En attente', approuve: 'Approuvé', rejete: 'Rejeté', rendu: 'Rendu' };
@@ -109,7 +110,7 @@ export default function Remboursements() {
                   <td><strong>{formatOriginal(r)}</strong></td>
                   <td className="text-muted">{r.motif}</td>
                   <td><span className={`badge ${r.statut === 'approuve' || r.statut === 'rendu' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning'}`}>{STATUT_LABELS[r.statut] || r.statut}</span></td>
-                  <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
+                  <td className="text-muted">{formatDate(r.date_remboursement)}</td>
                   {canManage && (
                     <td className="flex gap-8">
                       {r.type === 'remboursement' && r.statut === 'en_attente' && user.role === 'admin' && (

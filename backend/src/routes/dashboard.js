@@ -61,6 +61,7 @@ function fusionnerMensuel(paiementsRows, recettesRows) {
 // l'utilisateur a la permission correspondante, pour eviter d'exposer un chiffre sur une
 // tache qu'il ne peut de toute facon pas traiter).
 router.get('/alertes', async (req, res) => {
+  const annee = await getParam('annee_scolaire_courante');
   let elevesEnAttenteOrientation = 0;
   if (hasPermission(req.user, 'eleves')) {
     const [[row]] = await db.query("SELECT COUNT(*) as n FROM eleves WHERE en_attente_orientation=1 AND statut='actif'");
@@ -68,8 +69,14 @@ router.get('/alertes', async (req, res) => {
   }
   let remboursementsEnAttente = 0;
   if (hasPermission(req.user, 'remboursements')) {
-    const [[demandes]] = await db.query("SELECT COUNT(*) as n FROM remboursements WHERE statut='en_attente'");
-    const [[surplus]] = await db.query("SELECT COUNT(*) as n FROM paiements WHERE montant_surplus>0 AND surplus_rembourse=0 AND statut='valide'");
+    const [[demandes]] = await db.query(
+      "SELECT COUNT(*) as n FROM remboursements r JOIN paiements p ON p.id=r.paiement_id WHERE r.statut='en_attente' AND p.annee_scolaire=?",
+      [annee]
+    );
+    const [[surplus]] = await db.query(
+      "SELECT COUNT(*) as n FROM paiements WHERE annee_scolaire=? AND montant_surplus>0 AND surplus_rembourse=0 AND statut='valide'",
+      [annee]
+    );
     remboursementsEnAttente = demandes.n + surplus.n;
   }
   res.json({ elevesEnAttenteOrientation, remboursementsEnAttente });

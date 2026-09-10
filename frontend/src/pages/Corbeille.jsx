@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
+import { formatDate } from '../utils/dates.js';
 
 const TABLE_LABELS = {
   eleves: 'Élève archivé', eleves_suspendu: 'Élève suspendu', classes: 'Classe', utilisateurs: 'Utilisateur',
@@ -67,8 +68,8 @@ export default function Corbeille() {
                   <td><span className="badge badge-default">{TABLE_LABELS[r.table_source] || r.table_source}</span></td>
                   <td>{apercu(r)}</td>
                   <td className="text-muted">{r.supp_prenom} {r.supp_nom}</td>
-                  <td className="text-muted">{new Date(r.date_suppression).toLocaleDateString('fr-FR')}</td>
-                  <td className="text-muted">{new Date(r.date_expiration).toLocaleDateString('fr-FR')}</td>
+                  <td className="text-muted">{formatDate(r.date_suppression)}</td>
+                  <td className="text-muted">{formatDate(r.date_expiration)}</td>
                   {!viewingAnnee && (
                     <td className="flex gap-8">
                       <button className="btn btn-success btn-sm" onClick={() => restaurer(r.id)}><i className="ph ph-arrow-u-up-left"></i> Restaurer</button>

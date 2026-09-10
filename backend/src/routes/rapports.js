@@ -35,6 +35,16 @@ function calculerMontantsTranches(tranches, eleve) {
   });
 }
 
+function calculerSituationTranches(tranches, eleve) {
+  const attendus = calculerMontantsTranches(tranches, eleve);
+  let paiementRestant = Math.max(0, parseFloat(eleve.total_paye) || 0);
+  return attendus.map((attendu) => {
+    const paye = Math.min(paiementRestant, attendu);
+    paiementRestant = Math.max(0, paiementRestant - paye);
+    return { attendu, paye: Math.round(paye * 100) / 100, reste: Math.round((attendu - paye) * 100) / 100 };
+  });
+}
+
 const router = express.Router();
 router.use(requireAuth, requirePermission('rapports'));
 
@@ -336,6 +346,13 @@ router.get('/download/eleves.xlsx', async (req, res) => {
         tranchesParClasse[tranche.classe_id][Number(tranche.numero) - 1] = parseFloat(tranche.montant) || 0;
       }
     }
+    // Une classe sans decoupage explicite reste une tranche unique : le rapport
+    // doit quand meme afficher ce qui etait attendu, paye et restant pour l'eleve.
+    for (const row of rows) {
+      if (!tranchesParClasse[row.classe_id]?.length) {
+        tranchesParClasse[row.classe_id] = [parseFloat(row.frais_scolarite_total) || 0];
+      }
+    }
     const trancheCount = Object.values(tranchesParClasse).reduce((maximum, tranches) => Math.max(maximum, tranches.length), 0);
     const columns = [
       { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
@@ -350,7 +367,9 @@ router.get('/download/eleves.xlsx', async (req, res) => {
       { header: 'Perçu par', key: 'perce_par', width: 20, type: 'text' },
     ];
     for (let i = 1; i <= trancheCount; i++) {
-      columns.push({ header: `Tranche ${i}`, key: `tranche_${i}`, width: 14, type: 'currency', totalize: true });
+      columns.push({ header: `Tranche ${i} — attendu`, key: `tranche_${i}_attendu`, width: 18, type: 'currency', totalize: true });
+      columns.push({ header: `Tranche ${i} — payé`, key: `tranche_${i}_paye`, width: 16, type: 'currency', totalize: true });
+      columns.push({ header: `Tranche ${i} — reste`, key: `tranche_${i}_reste`, width: 16, type: 'currency', totalize: true });
     }
     const nextRow = addLetterhead(sheet, {
       ecole,
@@ -371,9 +390,11 @@ router.get('/download/eleves.xlsx', async (req, res) => {
         date_paiement: e.date_paiement ? new Date(e.date_paiement).toLocaleDateString('fr-FR') : '—',
         perce_par: e.perce_par || '—',
       };
-      const tranches = calculerMontantsTranches(tranchesParClasse[e.classe_id] || [], e);
-      tranches.forEach((montant, index) => {
-        row[`tranche_${index + 1}`] = montant;
+      const tranches = calculerSituationTranches(tranchesParClasse[e.classe_id] || [], e);
+      tranches.forEach((situation, index) => {
+        row[`tranche_${index + 1}_attendu`] = situation.attendu;
+        row[`tranche_${index + 1}_paye`] = situation.paye;
+        row[`tranche_${index + 1}_reste`] = situation.reste;
       });
       return row;
     }), { showTotals: true, devise, taux });

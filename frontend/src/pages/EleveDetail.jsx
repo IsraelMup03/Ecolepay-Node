@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDate } from '../utils/dates.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAlertes } from '../context/AlertesContext.jsx';
 import RowMenu from '../components/RowMenu.jsx';
@@ -402,7 +403,7 @@ export default function EleveDetail() {
                   </td>
                   <td>{p.mode_paiement}</td>
                   <td><span className={`badge ${PAIEMENT_STATUT_BADGE[p.statut] || 'badge-default'}`} title={p.statut === 'annule' && p.motif_annulation ? p.motif_annulation : undefined}>{PAIEMENT_STATUT_LABELS[p.statut] || p.statut}</span></td>
-                  <td className="text-muted">{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
+                  <td className="text-muted">{formatDate(p.date_paiement)}</td>
                   <td className="text-muted">{p.cpt_prenom} {p.cpt_nom}</td>
                   <td className="flex gap-8">
                     <button className="btn btn-outline btn-sm" onClick={() => window.open(`/recu/${p.id}`, '_blank')} title="Imprimer le reçu"><i className="ph ph-printer"></i></button>

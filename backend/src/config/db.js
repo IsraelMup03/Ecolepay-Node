@@ -1,4 +1,5 @@
 require('dotenv').config();
+if (!process.env.TZ) process.env.TZ = 'Africa/Kinshasa';
 
 if ((process.env.DB_CLIENT || '').toLowerCase() === 'sqlite') {
   // sqlite fallback: expose a `query(sql, params)` async function similar to mysql2
@@ -41,8 +42,11 @@ if ((process.env.DB_CLIENT || '').toLowerCase() === 'sqlite') {
 
   function translateSql(sql) {
     return sql
-      .replace(/\bNOW\(\)/gi, "CURRENT_TIMESTAMP")
-      .replace(/\bCURDATE\(\)/gi, "date('now')")
+      // Traiter DATE_SUB avant NOW : le remplacement de NOW contient une
+      // virgule, que l'expression reguliere DATE_SUB ne doit pas capturer.
+      .replace(/DATE_SUB\(NOW\(\),\s*INTERVAL\s*(\d+)\s*MONTH\)/gi, "datetime('now','localtime','-$1 months')")
+      .replace(/\bNOW\(\)/gi, "datetime('now','localtime')")
+      .replace(/\bCURDATE\(\)/gi, "date('now','localtime')")
       .replace(/DATE\(([^)]+)\)/gi, 'date($1)')
       .replace(/\bYEAR\(([^)]+)\)/gi, "strftime('%Y',$1)")
       .replace(/\bMONTH\(([^)]+)\)/gi, "strftime('%m',$1)")
@@ -122,6 +126,7 @@ if ((process.env.DB_CLIENT || '').toLowerCase() === 'sqlite') {
     connectionLimit: 10,
     queueLimit: 0,
     dateStrings: true,
+    timezone: '+01:00',
   });
 
   module.exports = pool;

@@ -50,6 +50,7 @@ export default function Rapports() {
   const modeData = data.parMode.map((m) => ({ name: MODE_LABELS[m.mode_paiement] || m.mode_paiement, value: parseFloat(m.total) }));
 
   const TABS = {
+    tous: { label: 'Tous', rows: [...data.elevesSoldes, ...data.elevesPartiels, ...data.elevesNonPayes], status: 'tous' },
     soldes: { label: 'Soldés', rows: data.elevesSoldes, status: 'solde' },
     partiels: { label: 'Partiels', rows: data.elevesPartiels, status: 'partiel' },
     non_payes: { label: 'Non payés', rows: data.elevesNonPayes, status: 'non_paye' },

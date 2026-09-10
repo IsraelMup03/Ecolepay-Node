@@ -4,6 +4,7 @@ import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import HistoricalBlock from '../components/HistoricalBlock.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDate } from '../utils/dates.js';
 
 export default function Caisse() {
   const navigate = useNavigate();
@@ -148,7 +149,7 @@ export default function Caisse() {
                   <tbody>
                     {caisseInfo.historique.slice(0, 5).map((p) => (
                       <tr key={p.id}>
-                        <td>{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</td>
+                        <td>{formatDate(p.date_paiement)}</td>
                         <td><span className="badge badge-info">{p.type_paiement}</span></td>
                         <td>
                           <strong style={p.statut === 'rembourse' || p.statut === 'annule' ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : {}}>{formatOriginal(p)}</strong>

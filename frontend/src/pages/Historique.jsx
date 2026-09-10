@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDate, formatDateTime } from '../utils/dates.js';
 
 const STATUT_LABELS = { solde: 'Soldé', partiel: 'Partiel', non_paye: 'Non payé' };
 const STATUT_BADGE = { solde: 'badge-success', partiel: 'badge-warning', non_paye: 'badge-danger' };
@@ -120,7 +121,7 @@ export default function Historique() {
                         </td>
                         <td>{p.mode_paiement}</td>
                         <td><span className={`badge ${PAIEMENT_STATUT_BADGE[p.statut] || 'badge-default'}`}>{PAIEMENT_STATUT_LABELS[p.statut] || p.statut}</span></td>
-                        <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
+                        <td className="text-muted">{formatDateTime(p.date_paiement)}</td>
                         <td className="text-muted">{p.cpt_prenom ? `${p.cpt_prenom} ${p.cpt_nom}` : '—'}</td>
                       </tr>
                     ))}
@@ -153,7 +154,7 @@ export default function Historique() {
                         <td><strong>{formatOriginal(r)}</strong></td>
                         <td className="text-muted">{r.motif}</td>
                         <td><span className={`badge ${REMB_STATUT_BADGE[r.statut] || 'badge-warning'}`}>{REMB_STATUT_LABELS[r.statut] || r.statut}</span></td>
-                        <td className="text-muted">{new Date(r.date_remboursement).toLocaleDateString('fr-FR')}</td>
+                        <td className="text-muted">{formatDate(r.date_remboursement)}</td>
                         <td className="text-muted">{r.appr_prenom ? `${r.appr_prenom} ${r.appr_nom}` : '—'}</td>
                       </tr>
                     ))}

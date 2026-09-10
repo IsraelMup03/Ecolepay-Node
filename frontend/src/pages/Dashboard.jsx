@@ -4,6 +4,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import client from '../api/client.js';
 import { useAnnee } from '../context/AnneeContext.jsx';
 import { useDevise } from '../context/DeviseContext.jsx';
+import { formatDateTime } from '../utils/dates.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import GenererRapportButton from '../components/GenererRapportButton.jsx';
 
@@ -165,7 +166,7 @@ export default function Dashboard() {
                   <td>{p.classe}</td>
                   <td><span className="badge badge-info">{p.type_paiement}</span></td>
                   <td><strong>{formatOriginal(p)}</strong></td>
-                  <td className="text-muted">{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
+                  <td className="text-muted">{formatDateTime(p.date_paiement)}</td>
                 </tr>
               ))}
             </tbody>
