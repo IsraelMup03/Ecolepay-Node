@@ -6,6 +6,17 @@ const { logActivite } = require('../utils/helpers');
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
+async function totalEleveAvecRemise(eleve, reductionFamille) {
+  const [[classe]] = await db.query('SELECT frais_scolarite FROM classes WHERE id=?', [eleve.classe_id]);
+  const [tranches] = await db.query('SELECT montant FROM classe_tranches WHERE classe_id=? ORDER BY numero ASC', [eleve.classe_id]);
+  const remise = parseFloat(eleve.remise_pourcentage) || 0;
+  if (!tranches.length) return (parseFloat(classe?.frais_scolarite) || 0) * (1 - remise / 100);
+  return tranches.reduce((total, tranche, index) => {
+    const pct = index === tranches.length - 1 ? Math.min(100, remise + (parseFloat(reductionFamille) || 0)) : remise;
+    return total + (parseFloat(tranche.montant) || 0) * (1 - pct / 100);
+  }, 0);
+}
+
 // GET /api/corbeille
 router.get('/', async (req, res) => {
   await db.query('DELETE FROM corbeille WHERE date_expiration < NOW() AND restaure=0');
@@ -65,6 +76,26 @@ router.post('/:id/restaurer', async (req, res) => {
     await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);
     await logActivite(req.user.id, 'Classe restauree', `Corbeille ID:${id}`, req.ip);
     return res.json({ success: true, message: 'Classe restauree.' });
+  }
+
+  if (item.table_source === 'familles') {
+    const famille = data.famille;
+    const membres = Array.isArray(data.membres) ? data.membres : [];
+    const [[existante]] = await db.query('SELECT id FROM familles WHERE id=?', [famille.id]);
+    if (!existante) return res.status(404).json({ error: 'Famille introuvable.' });
+    const placeholders = membres.map(() => '?').join(',');
+    if (membres.length) {
+      const [occupes] = await db.query(`SELECT id FROM eleves WHERE id IN (${placeholders}) AND famille_id IS NOT NULL AND famille_id<>?`, [...membres.map((m) => m.id), famille.id]);
+      if (occupes.length) return res.status(400).json({ error: 'Un membre ne peut pas être restauré car il appartient déjà à une autre famille.' });
+    }
+    await db.query('UPDATE familles SET actif=1 WHERE id=?', [famille.id]);
+    for (const membre of membres) {
+      const total = await totalEleveAvecRemise(membre, famille.pourcentage_reduction);
+      await db.query('UPDATE eleves SET famille_id=?, frais_scolarite_total=? WHERE id=?', [famille.id, total, membre.id]);
+    }
+    await db.query('UPDATE corbeille SET restaure=1 WHERE id=?', [id]);
+    await logActivite(req.user.id, 'Famille restauree', `Corbeille ID:${id}`, req.ip);
+    return res.json({ success: true, message: 'Famille restaurée.' });
   }
 
   if (item.table_source === 'utilisateurs') {

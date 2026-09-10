@@ -13,6 +13,28 @@ async function resolveDevise(req) {
   return { devise, taux };
 }
 
+function calculerMontantsTranches(tranches, eleve) {
+  const montants = tranches.map((montant) => parseFloat(montant) || 0);
+  const totalBrut = montants.reduce((total, montant) => total + montant, 0);
+  if (!totalBrut) return montants;
+
+  // Les archives ne conservent pas le detail des remises. On garde neanmoins un
+  // detail fiable dont la somme correspond exactement au total archive.
+  if (eleve.historique) {
+    const totalArchive = parseFloat(eleve.frais_scolarite_total);
+    if (Number.isFinite(totalArchive)) {
+      return montants.map((montant) => Math.round((montant * totalArchive / totalBrut) * 100) / 100);
+    }
+  }
+
+  const remiseIndividuelle = Math.min(100, Math.max(0, parseFloat(eleve.remise_pourcentage) || 0));
+  const remiseFamille = Math.min(100 - remiseIndividuelle, Math.max(0, parseFloat(eleve.famille_reduction_pourcentage) || 0));
+  return montants.map((montant, index) => {
+    const remise = index === montants.length - 1 ? remiseIndividuelle + remiseFamille : remiseIndividuelle;
+    return Math.round((montant * (1 - remise / 100)) * 100) / 100;
+  });
+}
+
 const router = express.Router();
 router.use(requireAuth, requirePermission('rapports'));
 
@@ -246,8 +268,10 @@ router.get('/download/eleves.xlsx', async (req, res) => {
       }
       if (classe_id) { params.push(classe_id); }
       [rows] = await db.query(
-        `SELECT e.matricule, e.nom, e.prenom, c.nom as classe, a.total_paye,
-                (a.frais_scolarite_total - a.total_paye) as reste, NULL as date_paiement, NULL as perce_par
+        `SELECT e.matricule, e.nom, e.prenom, c.nom as classe, a.classe_id, a.frais_scolarite_total,
+          a.remise_pourcentage, a.famille_nom, a.famille_reduction_pourcentage,
+          a.total_paye, (a.frais_scolarite_total - a.total_paye) as reste,
+          NULL as date_paiement, NULL as perce_par, 1 as historique
          FROM archives_annuelles a JOIN eleves e ON e.id=a.eleve_id LEFT JOIN classes c ON c.id=a.classe_id
          WHERE a.annee_scolaire=? ${statusCond} ${classe_id ? 'AND a.classe_id=?' : ''}
          ORDER BY e.nom ASC`,
@@ -280,12 +304,15 @@ router.get('/download/eleves.xlsx', async (req, res) => {
       if (classe_id) params.push(classe_id);
 
       [rows] = await db.query(
-        `SELECT e.matricule, e.nom, e.prenom, c.nom as classe,
+        `SELECT e.matricule, e.nom, e.prenom, c.nom as classe, e.classe_id,
+          e.frais_scolarite_total, e.remise_pourcentage,
+          f.nom as famille_nom, f.pourcentage_reduction as famille_reduction_pourcentage,
                 COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye,
                 COALESCE(e.frais_scolarite_total,0) - COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as reste,
                 (SELECT ${dateExpr} FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' ORDER BY p2.date_paiement DESC LIMIT 1) as date_paiement,
                 (SELECT ${payerConcat} FROM paiements p2 JOIN utilisateurs u ON u.id=p2.comptable_id WHERE p2.eleve_id=e.id AND p2.statut='valide') as perce_par
          FROM eleves e JOIN classes c ON c.id=e.classe_id
+         LEFT JOIN familles f ON f.id=e.famille_id
          WHERE e.statut='actif' ${classe_id ? 'AND e.classe_id=?' : ''} ${statusCondition}
          ORDER BY e.nom ASC`,
         params
@@ -296,16 +323,35 @@ router.get('/download/eleves.xlsx', async (req, res) => {
     const { devise, taux } = await resolveDevise(req);
     const workbook = newWorkbook();
     const sheet = workbook.addWorksheet('Élèves', { views: [{ state: 'frozen', ySplit: 8 }] });
+    const classeIds = [...new Set(rows.map((r) => r.classe_id).filter(Boolean))];
+    const tranchesParClasse = {};
+    if (classeIds.length) {
+      const placeholders = classeIds.map(() => '?').join(',');
+      const [tranchesRows] = await db.query(
+        `SELECT classe_id, numero, montant FROM classe_tranches WHERE classe_id IN (${placeholders}) ORDER BY classe_id ASC, numero ASC`,
+        classeIds
+      );
+      for (const tranche of tranchesRows) {
+        if (!tranchesParClasse[tranche.classe_id]) tranchesParClasse[tranche.classe_id] = [];
+        tranchesParClasse[tranche.classe_id][Number(tranche.numero) - 1] = parseFloat(tranche.montant) || 0;
+      }
+    }
+    const trancheCount = Object.values(tranchesParClasse).reduce((maximum, tranches) => Math.max(maximum, tranches.length), 0);
     const columns = [
       { header: 'Matricule', key: 'matricule', width: 16, type: 'text' },
       { header: 'Nom', key: 'nom', width: 18, type: 'text' },
       { header: 'Prénom', key: 'prenom', width: 18, type: 'text' },
       { header: 'Classe', key: 'classe', width: 22, type: 'text' },
+      { header: 'Bénéficiaire remise', key: 'beneficiaire_remise', width: 20, type: 'text' },
+      { header: 'Détail remise', key: 'detail_remise', width: 34, type: 'text' },
       { header: 'Total payé', key: 'total_paye', width: 16, type: 'currency', totalize: true },
       { header: 'Reste', key: 'reste', width: 16, type: 'currency', totalize: true },
       { header: 'Dernier paiement', key: 'date_paiement', width: 20, type: 'text' },
       { header: 'Perçu par', key: 'perce_par', width: 20, type: 'text' },
     ];
+    for (let i = 1; i <= trancheCount; i++) {
+      columns.push({ header: `Tranche ${i}`, key: `tranche_${i}`, width: 14, type: 'currency', totalize: true });
+    }
     const nextRow = addLetterhead(sheet, {
       ecole,
       title: `Liste des élèves — ${statusLabels[status] || 'Tous'}${modeHistorique ? ` (année ${annee})` : ''}`,
@@ -313,12 +359,24 @@ router.get('/download/eleves.xlsx', async (req, res) => {
       generatedBy: req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : null,
       numCols: columns.length,
     });
-    addTable(sheet, nextRow, columns, rows.map((e) => ({
-      matricule: e.matricule || '', nom: e.nom || '', prenom: e.prenom || '', classe: e.classe || '',
-      total_paye: parseFloat(e.total_paye) || 0, reste: parseFloat(e.reste) || 0,
-      date_paiement: e.date_paiement ? new Date(e.date_paiement).toLocaleDateString('fr-FR') : '—',
-      perce_par: e.perce_par || '—',
-    })), { showTotals: true, devise, taux });
+    addTable(sheet, nextRow, columns, rows.map((e) => {
+      const row = {
+        matricule: e.matricule || '', nom: e.nom || '', prenom: e.prenom || '', classe: e.classe || '',
+        beneficiaire_remise: (Number(e.remise_pourcentage) > 0 || Number(e.famille_reduction_pourcentage) > 0) ? 'Oui' : 'Non',
+        detail_remise: [
+          Number(e.remise_pourcentage) > 0 ? `Individuelle : ${e.remise_pourcentage}%` : '',
+          Number(e.famille_reduction_pourcentage) > 0 ? `Familiale : ${e.famille_reduction_pourcentage}% (dernière tranche)${e.famille_nom ? ` · ${e.famille_nom}` : ''}` : '',
+        ].filter(Boolean).join(' | ') || 'Aucune remise',
+        total_paye: parseFloat(e.total_paye) || 0, reste: parseFloat(e.reste) || 0,
+        date_paiement: e.date_paiement ? new Date(e.date_paiement).toLocaleDateString('fr-FR') : '—',
+        perce_par: e.perce_par || '—',
+      };
+      const tranches = calculerMontantsTranches(tranchesParClasse[e.classe_id] || [], e);
+      tranches.forEach((montant, index) => {
+        row[`tranche_${index + 1}`] = montant;
+      });
+      return row;
+    }), { showTotals: true, devise, taux });
 
     await sendWorkbook(res, workbook, `eleves_${status || 'liste'}_${Date.now()}.xlsx`);
   } catch (e) {

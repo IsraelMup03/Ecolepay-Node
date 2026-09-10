@@ -8,6 +8,8 @@ import ChangerMotDePasse from './pages/ChangerMotDePasse.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Caisse from './pages/Caisse.jsx';
 import Eleves from './pages/Eleves.jsx';
+import Familles from './pages/Familles.jsx';
+import FamilleDetail from './pages/FamilleDetail.jsx';
 import EleveDetail from './pages/EleveDetail.jsx';
 import Classes from './pages/Classes.jsx';
 import ClasseDetail from './pages/ClasseDetail.jsx';
@@ -59,6 +61,8 @@ export default function App() {
       <Route path="/" element={<Page><Dashboard /></Page>} />
       <Route path="/caisse" element={<Page perm="paiements"><Caisse /></Page>} />
       <Route path="/eleves" element={<Page perm="eleves"><Eleves /></Page>} />
+      <Route path="/familles" element={<Page perm="eleves"><Familles /></Page>} />
+      <Route path="/familles/:id" element={<Page perm="eleves"><FamilleDetail /></Page>} />
       <Route path="/eleves/:id" element={<Page perm="eleves"><EleveDetail /></Page>} />
       <Route path="/classes" element={<Page perm="classes"><Classes /></Page>} />
       <Route path="/classes/:id" element={<Page perm="classes"><ClasseDetail /></Page>} />

@@ -14,6 +14,7 @@ const NAV_GROUPS = [
   ]},
   { section: 'Gestion', railIcon: 'ph-bold ph-briefcase', items: [
     { to: '/eleves', icon: 'ph-bold ph-graduation-cap', label: 'Élèves', perm: 'eleves' },
+    { to: '/familles', icon: 'ph-bold ph-users-three', label: 'Familles', perm: 'eleves' },
     { to: '/classes', icon: 'ph-bold ph-buildings', label: 'Classes', perm: 'classes' },
     { to: '/paiements', icon: 'ph-bold ph-credit-card', label: 'Paiements', perm: null },
     { to: '/remboursements', icon: 'ph-bold ph-arrow-counter-clockwise', label: 'Remboursements', perm: 'remboursements' },
@@ -39,6 +40,8 @@ const PAGE_TITLES = {
   '/': ['Tableau de bord', "Vue d'ensemble de l'année scolaire"],
   '/caisse': ['Caisse rapide', 'Enregistrer un paiement'],
   '/eleves': ['Gestion des élèves', 'Inscriptions et suivi des paiements'],
+  '/familles': ['Gestion des familles', 'Réductions familiales et membres'],
+  '/familles/': ['Fiche famille', 'Membres et réduction familiale'],
   '/classes': ['Gestion des classes', 'Frais et hiérarchie des classes'],
   '/paiements': ['Historique des paiements', 'Toutes les transactions'],
   '/remboursements': ['Remboursements', 'Demandes et approbations'],

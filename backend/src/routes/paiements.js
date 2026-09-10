@@ -213,11 +213,13 @@ router.get('/:id/recu', async (req, res) => {
 
   const [[p]] = await db.query(
     `SELECT p.*, e.nom as e_nom, e.prenom as e_prenom, e.matricule, e.genre,
-            e.nom_parent, e.telephone_parent, e.annee_scolaire as e_annee, e.frais_scolarite_total,
+            e.nom_parent, e.telephone_parent, e.annee_scolaire as e_annee,
+            COALESCE(a.frais_scolarite_total, e.frais_scolarite_total) as frais_scolarite_total,
             c.nom as classe, s.nom as section, u.prenom as cpt_prenom, u.nom as cpt_nom,
-            COALESCE((SELECT SUM(p2.montant_usd) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.type_paiement=p.type_paiement),0) as total_type_paye_usd
+            COALESCE((SELECT SUM(p2.montant_usd) FROM paiements p2 WHERE p2.eleve_id=e.id AND p2.statut='valide' AND p2.type_paiement=p.type_paiement AND p2.annee_scolaire=p.annee_scolaire),0) as total_type_paye_usd
      FROM paiements p JOIN eleves e ON e.id=p.eleve_id JOIN classes c ON c.id=e.classe_id
-     LEFT JOIN sections s ON s.id=e.section_id
+    LEFT JOIN sections s ON s.id=e.section_id
+    LEFT JOIN archives_annuelles a ON a.eleve_id=e.id AND a.annee_scolaire=p.annee_scolaire
      LEFT JOIN utilisateurs u ON u.id=p.comptable_id
      WHERE p.id=?`,
     [id]

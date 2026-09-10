@@ -308,7 +308,13 @@ export default function EleveDetail() {
                 <tr><td className="text-muted">Date d'inscription</td><td>{eleve.date_inscription || '—'}</td></tr>
                 <tr><td className="text-muted">Année scolaire</td><td>{eleve.annee_scolaire || '—'}</td></tr>
                 <tr><td className="text-muted">Remise sur la scolarité</td><td>
-                  {eleve.remise_pourcentage > 0 ? <span className="badge badge-info">{eleve.remise_pourcentage}%</span> : <span className="text-muted">Aucune</span>}
+                  {(Number(eleve.remise_pourcentage) > 0 || Number(eleve.famille_reduction_pourcentage) > 0) ? (
+                    <div className="remise-status">
+                      <span className="badge badge-info">Bénéficiaire d’une remise</span>
+                      {Number(eleve.remise_pourcentage) > 0 && <small>Remise individuelle : {eleve.remise_pourcentage}%</small>}
+                      {Number(eleve.famille_reduction_pourcentage) > 0 && <small>Remise familiale : {eleve.famille_reduction_pourcentage}% sur la dernière tranche{eleve.famille_nom ? ` · ${eleve.famille_nom}` : ''}</small>}
+                    </div>
+                  ) : <span className="text-muted">Aucune remise</span>}
                   {!viewingAnnee && <button className="btn btn-link btn-sm" style={{ marginLeft: 8 }} onClick={openRemise}>Modifier</button>}
                 </td></tr>
               </tbody>

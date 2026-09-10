@@ -138,6 +138,21 @@ CREATE TABLE IF NOT EXISTS `classe_tranches` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- TABLE: familles
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `familles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `nom` varchar(150) NOT NULL,
+  `pourcentage_reduction` decimal(5,2) DEFAULT 0.00 COMMENT 'Reduction appliquee uniquement sur la derniere tranche de chaque eleve membre de la famille',
+  `actif` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) DEFAULT NULL,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `created_by` (`created_by`),
+  CONSTRAINT `fk_famille_createur` FOREIGN KEY (`created_by`) REFERENCES `utilisateurs` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- TABLE: eleves
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `eleves` (
@@ -152,6 +167,7 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   `nationalite` varchar(100) DEFAULT 'Congolaise',
   `classe_id` int(11) NOT NULL,
   `section_id` int(11) DEFAULT NULL COMMENT 'Section (A/B/C) de la classe, assignee au premier paiement scolarite/inscription de l annee ou choisie directement a l inscription',
+  `famille_id` int(11) DEFAULT NULL COMMENT 'Famille a laquelle appartient l eleve ; la reduction familiale touche uniquement la derniere tranche',
   `photo` varchar(255) DEFAULT NULL,
   `nom_parent` varchar(200) DEFAULT NULL,
   `telephone_parent` varchar(50) DEFAULT NULL,
@@ -173,10 +189,12 @@ CREATE TABLE IF NOT EXISTS `eleves` (
   UNIQUE KEY `matricule` (`matricule`),
   KEY `classe_id` (`classe_id`),
   KEY `section_id` (`section_id`),
+  KEY `famille_id` (`famille_id`),
   KEY `idx_eleves_statut_annee` (`statut`,`annee_scolaire`),
   KEY `idx_eleves_classe_statut` (`classe_id`,`statut`),
   CONSTRAINT `fk_eleve_classe` FOREIGN KEY (`classe_id`) REFERENCES `classes` (`id`),
-  CONSTRAINT `fk_eleve_section` FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_eleve_section` FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_eleve_famille` FOREIGN KEY (`famille_id`) REFERENCES `familles` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -301,6 +319,9 @@ CREATE TABLE IF NOT EXISTS `archives_annuelles` (
   `classe_id` int(11) NOT NULL,
   `frais_scolarite_total` decimal(15,2) DEFAULT 0.00,
   `total_paye` decimal(15,2) DEFAULT 0.00,
+  `remise_pourcentage` decimal(5,2) DEFAULT 0.00,
+  `famille_reduction_pourcentage` decimal(5,2) DEFAULT 0.00,
+  `famille_nom` varchar(255) DEFAULT NULL,
   `statut_paiement` enum('solde','partiel','non_paye') DEFAULT 'non_paye',
   `date_archive` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

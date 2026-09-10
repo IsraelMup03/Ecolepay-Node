@@ -22,6 +22,7 @@ const rapportsRoutes = require('./routes/rapports');
 const historiqueRoutes = require('./routes/historique');
 const rechercheRoutes = require('./routes/recherche');
 const comptabiliteRoutes = require('./routes/comptabilite');
+const famillesRoutes = require('./routes/familles');
 
 // Filet de securite : une exception non geree dans une route async ne doit jamais
 // arreter tout le serveur (nodemon ne redemarre pas automatiquement apres un crash,
@@ -92,6 +93,7 @@ app.use('/api/rapports', rapportsRoutes);
 app.use('/api/historique', historiqueRoutes);
 app.use('/api/recherche', rechercheRoutes);
 app.use('/api/comptabilite', comptabiliteRoutes);
+app.use('/api/familles', famillesRoutes);
 
 // Redirige toute route non-API/non-uploads vers index.html : c'est React Router (cote
 // client) qui decide alors quelle page afficher. Necessaire pour qu'un rechargement de

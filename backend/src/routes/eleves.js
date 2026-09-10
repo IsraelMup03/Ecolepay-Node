@@ -30,14 +30,16 @@ function partitionParDevise(paiements) {
 // montant de tranche est ajuste a la remise de l'eleve (meme pourcentage applique
 // uniformement sur toutes les tranches) pour que la derniere tranche se termine exactement
 // au montant que l'eleve doit reellement (frais_scolarite_total, deja remise).
-async function calculerTranches(classeId, remisePourcentage, totalPayeScolarite, fraisScolariteRef) {
+async function calculerTranches(classeId, remisePourcentage, totalPayeScolarite, fraisScolariteRef, familleReductionPct = 0) {
   const [tranchesClasse] = await db.query('SELECT numero, montant FROM classe_tranches WHERE classe_id=? ORDER BY numero ASC', [classeId]);
   if (tranchesClasse.length === 0) return [];
-  const facteur = 1 - (parseFloat(remisePourcentage) || 0) / 100;
+  const remiseIndiv = parseFloat(remisePourcentage) || 0;
+  const remiseFamille = parseFloat(familleReductionPct) || 0;
   let cumulAvant = 0;
   const dernier = tranchesClasse.length - 1;
   return tranchesClasse.map((t, i) => {
-    const montant = parseFloat(t.montant) * facteur;
+    const remiseTotale = (i === dernier && remiseFamille > 0) ? Math.min(100, remiseIndiv + remiseFamille) : remiseIndiv;
+    const montant = parseFloat(t.montant) * (1 - remiseTotale / 100);
     const paye = Math.min(Math.max(totalPayeScolarite - cumulAvant, 0), montant);
     let pct = montant > 0 ? Math.round((paye / montant) * 100) : 0;
     // Force 100% sur la derniere tranche si l'eleve est reellement solde : evite un arrondi
@@ -237,11 +239,12 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
   const { annee } = req.query;
   const [[eleve]] = await db.query(
     `SELECT e.*, c.nom as classe_nom, c.frais_scolarite as classe_frais, c.frais_inscription as classe_frais_inscription,
-            cs.nom as classe_sup_nom, ci.nom as classe_inf_nom, s.nom as section_nom
+            cs.nom as classe_sup_nom, ci.nom as classe_inf_nom, s.nom as section_nom, f.nom as famille_nom, f.pourcentage_reduction as famille_reduction_pourcentage
      FROM eleves e JOIN classes c ON c.id=e.classe_id
      LEFT JOIN classes cs ON cs.id=c.classe_superieure_id
      LEFT JOIN classes ci ON ci.id=c.classe_inferieure_id
      LEFT JOIN sections s ON s.id=e.section_id
+     LEFT JOIN familles f ON f.id=e.famille_id
      WHERE e.id=?`,
     [id]
   );
@@ -294,7 +297,7 @@ router.get('/:id', requirePermission('eleves'), async (req, res) => {
     ? [[]]
     : await db.query('SELECT id, nom FROM sections WHERE classe_id=? ORDER BY ordre ASC, nom ASC', [eleve.classe_id]);
 
-  const tranches = modeHistorique ? [] : await calculerTranches(eleve.classe_id, eleve.remise_pourcentage, totalPayeScolarite, fraisScolariteRef);
+  const tranches = modeHistorique ? [] : await calculerTranches(eleve.classe_id, eleve.remise_pourcentage, totalPayeScolarite, fraisScolariteRef, eleve.famille_reduction_pourcentage || 0);
 
   res.json({
     eleve, paiements, modeHistorique, sectionsDisponibles, tranches,
@@ -310,10 +313,11 @@ router.get('/:id/caisse-info', requireAnyPermission('paiements', 'eleves'), asyn
   const { id } = req.params;
   const [[eleve]] = await db.query(
     `SELECT e.*, c.nom as classe_nom, c.frais_scolarite, c.frais_inscription, s.nom as section_nom,
+            f.nom as famille_nom, f.pourcentage_reduction as famille_reduction_pourcentage,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_scolarite,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='inscription' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_inscription,
             COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.annee_scolaire=e.annee_scolaire),0) as total_paye_global
-     FROM eleves e JOIN classes c ON c.id=e.classe_id LEFT JOIN sections s ON s.id=e.section_id WHERE e.id=?`,
+     FROM eleves e JOIN classes c ON c.id=e.classe_id LEFT JOIN sections s ON s.id=e.section_id LEFT JOIN familles f ON f.id=e.famille_id WHERE e.id=?`,
     [id]
   );
   if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
@@ -335,7 +339,7 @@ router.get('/:id/caisse-info', requireAnyPermission('paiements', 'eleves'), asyn
     ? [[]]
     : await db.query('SELECT id, nom FROM sections WHERE classe_id=? ORDER BY ordre ASC, nom ASC', [eleve.classe_id]);
 
-  const tranches = await calculerTranches(eleve.classe_id, eleve.remise_pourcentage, eleve.total_paye_scolarite, eleve.frais_scolarite_total);
+  const tranches = await calculerTranches(eleve.classe_id, eleve.remise_pourcentage, eleve.total_paye_scolarite, eleve.frais_scolarite_total, eleve.famille_reduction_pourcentage || 0);
 
   const [historique] = await db.query(
     `SELECT p.*, u.prenom as c_prenom, u.nom as c_nom,
@@ -515,10 +519,25 @@ router.put('/:id/remise', requirePermission('eleves'), async (req, res) => {
   const [[eleve]] = await db.query('SELECT classe_id FROM eleves WHERE id=?', [id]);
   if (!eleve) return res.status(404).json({ error: 'Eleve introuvable.' });
   const [[cls]] = await db.query('SELECT frais_scolarite FROM classes WHERE id=?', [eleve.classe_id]);
+  const [[famille]] = await db.query('SELECT f.pourcentage_reduction FROM eleves e LEFT JOIN familles f ON f.id=e.famille_id WHERE e.id=?', [id]);
+  const reductionFamille = parseFloat(famille?.pourcentage_reduction) || 0;
+  const [tranches] = await db.query('SELECT numero, montant FROM classe_tranches WHERE classe_id=? ORDER BY numero ASC', [eleve.classe_id]);
+  let montantTotal = parseFloat(cls.frais_scolarite) || 0;
+  if (tranches.length === 0) {
+    montantTotal = (parseFloat(cls.frais_scolarite) || 0) * (1 - remise / 100);
+  }
+  if (tranches.length > 0) {
+    montantTotal = 0;
+    for (let i = 0; i < tranches.length; i++) {
+      const montant = parseFloat(tranches[i].montant) || 0;
+      const remiseTotale = (i === tranches.length - 1 && reductionFamille > 0) ? Math.min(100, remise + reductionFamille) : remise;
+      montantTotal += montant * (1 - remiseTotale / 100);
+    }
+  }
 
   await db.query(
     'UPDATE eleves SET remise_pourcentage=?, frais_scolarite_total=? WHERE id=?',
-    [remise, cls.frais_scolarite * (1 - remise / 100), id]
+    [remise, montantTotal, id]
   );
   await logActivite(req.user.id, 'Remise eleve modifiee', `ID:${id} -> ${remise}%`, req.ip);
   res.json({ success: true });

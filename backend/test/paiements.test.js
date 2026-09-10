@@ -4,7 +4,7 @@ const dbFile = setupTestDb(); // doit rester avant tout require touchant src/con
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { startTestServer } = require('./_helpers/app');
-const { creerClasse, creerEleve, tokenAdmin, db } = require('./_helpers/fixtures');
+const { creerClasse, creerEleve, creerPaiementBrut, tokenAdmin, db } = require('./_helpers/fixtures');
 
 let ctx;
 before(async () => {
@@ -25,6 +25,34 @@ test('un paiement de scolarite normal (sous le montant du) est enregistre tel qu
 
   assert.equal(status, 201);
   assert.equal(body.surplus, undefined, 'pas de surplus attendu sous le montant du');
+});
+
+test('le reçu reflète uniquement les paiements réels de son année scolaire', async () => {
+  const classe = await creerClasse({ frais_scolarite: 500 });
+  const eleve = await creerEleve(classe.id);
+  await creerPaiementBrut(eleve.id, { montant: 100, montant_usd: 100, annee_scolaire: '2023-2024' });
+  const courant = await ctx.api('POST', '/api/paiements', { eleve_id: eleve.id, montant: 200, devise: 'USD', type_paiement: 'scolarite' });
+
+  const recu = await ctx.api('GET', `/api/paiements/${courant.body.id}/recu`);
+  assert.equal(recu.status, 200);
+  assert.equal(Number(recu.body.pctPaye), 40);
+  assert.equal(Number(recu.body.resteApres), 300);
+});
+
+test('un reçu ancien utilise les frais archives de son année', async () => {
+  const classe = await creerClasse({ frais_scolarite: 500 });
+  const eleve = await creerEleve(classe.id);
+  const ancien = await creerPaiementBrut(eleve.id, { montant: 200, montant_usd: 200, annee_scolaire: '2022-2023' });
+  await db.query(
+    `INSERT INTO archives_annuelles (annee_scolaire, eleve_id, classe_id, frais_scolarite_total, total_paye, statut_paiement)
+     VALUES (?,?,?,?,?,?)`,
+    ['2022-2023', eleve.id, classe.id, 1000, 200, 'partiel']
+  );
+
+  const recu = await ctx.api('GET', `/api/paiements/${ancien.id}/recu`);
+  assert.equal(recu.status, 200);
+  assert.equal(Number(recu.body.pctPaye), 20);
+  assert.equal(Number(recu.body.resteApres), 800);
 });
 
 test('un paiement de scolarite qui depasse ce qui est du est plafonne, le surplus est isole', async () => {

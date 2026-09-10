@@ -4,7 +4,7 @@ import { useAnnee } from '../context/AnneeContext.jsx';
 
 const TABLE_LABELS = {
   eleves: 'Élève archivé', eleves_suspendu: 'Élève suspendu', classes: 'Classe', utilisateurs: 'Utilisateur',
-  depenses: 'Dépense', recettes_diverses: 'Recette diverse', paiements: 'Paiement annulé',
+  depenses: 'Dépense', recettes_diverses: 'Recette diverse', paiements: 'Paiement annulé', familles: 'Famille',
 };
 
 export default function Corbeille() {
@@ -41,6 +41,7 @@ export default function Corbeille() {
       if (item.table_source === 'depenses') return `${d.reference} — ${d.beneficiaire || d.categorie} (${d.montant} ${d.devise})`;
       if (item.table_source === 'recettes_diverses') return `${d.reference} — ${d.provenance || d.categorie} (${d.montant} ${d.devise})`;
       if (item.table_source === 'paiements') return `${d.reference} — ${d.montant} ${d.devise}`;
+      if (item.table_source === 'familles') return `${d.famille?.nom || 'Famille'} — ${(d.membres || []).length} membre(s)`;
       return '—';
     } catch (e) { return '—'; }
   }

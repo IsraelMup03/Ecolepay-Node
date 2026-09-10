@@ -15,6 +15,7 @@ function buildApp() {
   app.use('/api/promotion', require('../../src/routes/promotion'));
   app.use('/api/comptabilite', require('../../src/routes/comptabilite'));
   app.use('/api/rapports', require('../../src/routes/rapports'));
+  app.use('/api/familles', require('../../src/routes/familles'));
   app.use('/api/utilisateurs', require('../../src/routes/utilisateurs'));
   app.use('/api/historique', require('../../src/routes/historique'));
   app.use('/api/parametres', require('../../src/routes/parametres'));

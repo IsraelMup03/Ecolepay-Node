@@ -46,9 +46,10 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
     // et ne doivent pas gonfler artificiellement le "soldé" d'un eleve qui n'a en realite
     // rien paye de sa scolarite.
     const [elevesActifs] = await conn.query(
-      `SELECT e.id, e.classe_id, e.frais_scolarite_total,
+            `SELECT e.id, e.classe_id, e.frais_scolarite_total, e.remise_pourcentage,
+              f.nom as famille_nom, f.pourcentage_reduction as famille_reduction_pourcentage,
               COALESCE((SELECT SUM(p.montant_usd) FROM paiements p WHERE p.eleve_id=e.id AND p.statut='valide' AND p.type_paiement='scolarite' AND p.annee_scolaire=?),0) as total_paye
-       FROM eleves e WHERE e.statut='actif'`,
+             FROM eleves e LEFT JOIN familles f ON f.id=e.famille_id WHERE e.statut='actif'`,
       [annee]
     );
     for (const ea of elevesActifs) {
@@ -59,14 +60,14 @@ router.post('/executer', requirePermission('promotion'), async (req, res) => {
       );
       if (existante) {
         await conn.query(
-          'UPDATE archives_annuelles SET classe_id=?, frais_scolarite_total=?, total_paye=?, statut_paiement=? WHERE id=?',
-          [ea.classe_id, ea.frais_scolarite_total, ea.total_paye, statutPay, existante.id]
+          'UPDATE archives_annuelles SET classe_id=?, frais_scolarite_total=?, total_paye=?, remise_pourcentage=?, famille_reduction_pourcentage=?, famille_nom=?, statut_paiement=? WHERE id=?',
+          [ea.classe_id, ea.frais_scolarite_total, ea.total_paye, ea.remise_pourcentage || 0, ea.famille_reduction_pourcentage || 0, ea.famille_nom || null, statutPay, existante.id]
         );
       } else {
         await conn.query(
-          `INSERT INTO archives_annuelles (annee_scolaire, eleve_id, classe_id, frais_scolarite_total, total_paye, statut_paiement)
-           VALUES (?,?,?,?,?,?)`,
-          [annee, ea.id, ea.classe_id, ea.frais_scolarite_total, ea.total_paye, statutPay]
+          `INSERT INTO archives_annuelles (annee_scolaire, eleve_id, classe_id, frais_scolarite_total, total_paye, remise_pourcentage, famille_reduction_pourcentage, famille_nom, statut_paiement)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+          [annee, ea.id, ea.classe_id, ea.frais_scolarite_total, ea.total_paye, ea.remise_pourcentage || 0, ea.famille_reduction_pourcentage || 0, ea.famille_nom || null, statutPay]
         );
       }
     }

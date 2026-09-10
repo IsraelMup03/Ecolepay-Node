@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const defaultApi = (typeof window !== 'undefined')
-  ? `${window.location.protocol}//${window.location.hostname}:5000/api`
+  ? `${window.location.origin}/api`
   : 'http://localhost:5000/api';
 
 const API_URL = import.meta.env.VITE_API_URL || defaultApi;

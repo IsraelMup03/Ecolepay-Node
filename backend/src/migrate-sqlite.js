@@ -109,6 +109,16 @@ async function main() {
       FOREIGN KEY (classe_id) REFERENCES classes(id)
     );
 
+    CREATE TABLE IF NOT EXISTS familles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nom TEXT NOT NULL,
+      pourcentage_reduction NUMERIC DEFAULT 0,
+      actif INTEGER DEFAULT 1,
+      created_by INTEGER,
+      date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES utilisateurs(id) ON DELETE SET NULL
+    );
+
     -- Tranches de scolarite d'une classe (ex: 400$/200$/150$) : classes.frais_scolarite
     -- reste la somme de ces tranches et continue d'etre ce que tout le reste du logiciel
     -- lit -- une classe qui n'utilise pas les tranches n'a simplement aucune ligne ici.
@@ -133,6 +143,7 @@ async function main() {
       nationalite TEXT DEFAULT 'Congolaise',
       classe_id INTEGER NOT NULL,
       section_id INTEGER,
+      famille_id INTEGER,
       photo TEXT,
       nom_parent TEXT,
       telephone_parent TEXT,
@@ -149,7 +160,8 @@ async function main() {
       date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (classe_id) REFERENCES classes(id),
-      FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE SET NULL
+      FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE SET NULL,
+      FOREIGN KEY (famille_id) REFERENCES familles(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS paiements (
@@ -225,6 +237,9 @@ async function main() {
       classe_id INTEGER NOT NULL,
       frais_scolarite_total NUMERIC DEFAULT 0.00,
       total_paye NUMERIC DEFAULT 0.00,
+      remise_pourcentage NUMERIC DEFAULT 0,
+      famille_reduction_pourcentage NUMERIC DEFAULT 0,
+      famille_nom TEXT,
       statut_paiement TEXT DEFAULT 'non_paye',
       date_archive DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (annee_scolaire, eleve_id)
@@ -271,6 +286,20 @@ async function main() {
     );
   `);
 
+  // Les index dependants des colonnes ajoutees doivent etre crees apres leur
+  // migration : sinon une ancienne base echoue avant meme d'atteindre ensureColumn().
+  await ensureColumn(db, 'eleves', 'section_id', 'INTEGER REFERENCES sections(id)');
+  await ensureColumn(db, 'eleves', 'famille_id', 'INTEGER REFERENCES familles(id)');
+  await ensureColumn(db, 'familles', 'actif', 'INTEGER DEFAULT 1');
+  await ensureColumn(db, 'eleves', 'remise_pourcentage', 'NUMERIC DEFAULT 0');
+  await ensureColumn(db, 'eleves', 'en_attente_orientation', 'INTEGER DEFAULT 0');
+  await ensureColumn(db, 'classes', 'est_pivot', 'INTEGER DEFAULT 0');
+  await ensureColumn(db, 'paiements', 'motif_annulation', 'TEXT');
+  await ensureColumn(db, 'paiements', 'annule_par', 'INTEGER REFERENCES utilisateurs(id)');
+  await ensureColumn(db, 'archives_annuelles', 'remise_pourcentage', 'NUMERIC DEFAULT 0');
+  await ensureColumn(db, 'archives_annuelles', 'famille_reduction_pourcentage', 'NUMERIC DEFAULT 0');
+  await ensureColumn(db, 'archives_annuelles', 'famille_nom', 'TEXT');
+
   console.log('Creation des index...');
   // Sans ces index, chaque sous-requete correlee (SUM(...) WHERE eleve_id=...) fait un scan
   // complet de la table paiements pour chaque eleve : instantane a quelques centaines d'eleves,
@@ -283,6 +312,7 @@ async function main() {
     CREATE INDEX IF NOT EXISTS idx_paiements_date ON paiements(date_paiement);
     CREATE INDEX IF NOT EXISTS idx_eleves_statut_annee ON eleves(statut, annee_scolaire);
     CREATE INDEX IF NOT EXISTS idx_eleves_classe_statut ON eleves(classe_id, statut);
+    CREATE INDEX IF NOT EXISTS idx_eleves_famille ON eleves(famille_id);
     CREATE INDEX IF NOT EXISTS idx_eleves_section ON eleves(section_id);
     CREATE INDEX IF NOT EXISTS idx_sections_classe ON sections(classe_id);
     CREATE INDEX IF NOT EXISTS idx_classe_tranches_classe ON classe_tranches(classe_id);
@@ -296,13 +326,6 @@ async function main() {
 
   // Colonnes ajoutees a "eleves" apres sa creation initiale (voir ensureColumn plus haut) :
   // sans body, une base deja existante chez un client ne les recevrait jamais.
-  await ensureColumn(db, 'eleves', 'section_id', 'INTEGER REFERENCES sections(id)');
-  await ensureColumn(db, 'eleves', 'remise_pourcentage', 'NUMERIC DEFAULT 0');
-  await ensureColumn(db, 'eleves', 'en_attente_orientation', 'INTEGER DEFAULT 0');
-  await ensureColumn(db, 'classes', 'est_pivot', 'INTEGER DEFAULT 0');
-  await ensureColumn(db, 'paiements', 'motif_annulation', 'TEXT');
-  await ensureColumn(db, 'paiements', 'annule_par', 'INTEGER REFERENCES utilisateurs(id)');
-
   console.log('Insertion des donnees de base...');
   // "INSERT OR IGNORE" ne protege que contre un conflit sur une colonne UNIQUE/PK -- ici
   // l'id s'auto-incremente et aucune autre colonne n'est unique, donc il inserait une
